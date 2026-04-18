@@ -1,0 +1,219 @@
+/* ---- Story Import Page ---- */
+.story-page {
+  flex: 1;
+  padding: 24px 32px;
+  overflow-y: auto;
+  max-width: 900px;
+}
+
+.story-header {
+  margin-bottom: 24px;
+}
+
+.story-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.story-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.story-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.story-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.story-card {
+  position: relative;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  border-radius: var(--radius-sm);
+}
+
+.story-card:hover {
+  border-color: var(--accent);
+}
+
+.story-card.active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.story-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.story-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.story-card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+.story-error {
+  font-size: 11px;
+  color: var(--error);
+  margin-top: 4px;
+}
+
+.story-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.story-card:hover .story-delete {
+  opacity: 1;
+}
+
+/* ---- Story Detail Panel ---- */
+.story-detail {
+  border: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  padding: 20px;
+  border-radius: var(--radius-sm);
+}
+
+.story-detail h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.detail-section {
+  margin-bottom: 16px;
+}
+
+.detail-section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.detail-section p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.detail-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xs);
+}
+
+.detail-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.detail-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.detail-card-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.detail-card-tags span {
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+}
+
+/* ---- Story Import Dialog ---- */
+.story-import-dialog {
+  width: min(560px, 90vw);
+}
+
+.story-textarea {
+  width: 100%;
+  min-height: 200px;
+  max-height: 400px;
+  resize: vertical;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid var(--border-light);
+  background: var(--bg-input);
+  font-family: var(--font-sans);
+  border-radius: var(--radius-sm);
+}
+
+.story-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.story-char-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+/* ---- Story Mobile Responsive ---- */
+@media (max-width: 640px) {
+  .story-page {
+    padding: 16px 14px;
+  }
+  .story-detail {
+    padding: 14px;
+  }
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .story-import-dialog {
+    width: min(520px, 95vw);
+    padding: 16px;
+  }
+  .story-textarea {
+    font-size: 16px; /* prevent iOS zoom */
+  }
+}

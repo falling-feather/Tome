@@ -1,0 +1,252 @@
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, desc
+from backend.app.database import get_db
+from backend.app.models import User, GameSession, Message, ActivityLog, WorldEntry, PromptTemplate
+from backend.app.schemas import LogList, LogEntry, AdminStats, UserInfo
+from backend.app.auth import require_admin
+from backend.app.services.resilience import (
+    llm_circuit_breaker, llm_fallback_circuit_breaker,
+    game_rate_limiter, health_metrics,
+)
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+@router.get("/stats", response_model=AdminStats)
+async def get_stats(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    total_sessions = (await db.execute(select(func.count(GameSession.id)))).scalar() or 0
+    total_messages = (await db.execute(select(func.count(Message.id)))).scalar() or 0
+    total_logs = (await db.execute(select(func.count(ActivityLog.id)))).scalar() or 0
+
+    recent_result = await db.execute(select(User).order_by(desc(User.created_at)).limit(10))
+    recent_users = [
+        UserInfo(id=u.id, username=u.username, is_admin=u.is_admin, created_at=u.created_at)
+        for u in recent_result.scalars().all()
+    ]
+
+    return AdminStats(
+        total_users=total_users, total_sessions=total_sessions,
+        total_messages=total_messages, total_logs=total_logs,
+        recent_users=recent_users,
+    )
+
+
+@router.get("/logs", response_model=LogList)
+async def get_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    action: str = Query("", description="过滤操作类型"),
+    username: str = Query("", description="过滤用户名"),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(ActivityLog).order_by(desc(ActivityLog.created_at))
+
+    if action:
+        query = query.where(ActivityLog.action == action)
+    if username:
+        query = query.where(ActivityLog.username.contains(username))
+
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar() or 0
+
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    return LogList(
+        logs=[
+            LogEntry(
+                id=l.id, user_id=l.user_id, username=l.username, action=l.action,
+                detail=l.detail, ip_address=l.ip_address, user_agent=l.user_agent,
+                created_at=l.created_at,
+            ) for l in logs
+        ],
+        total=total, page=page, page_size=page_size,
+    )
+
+
+@router.get("/users")
+async def list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    total = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    result = await db.execute(
+        select(User).order_by(desc(User.created_at)).offset((page - 1) * page_size).limit(page_size)
+    )
+    users = result.scalars().all()
+    return {
+        "users": [
+            {"id": u.id, "username": u.username, "is_admin": u.is_admin, "created_at": u.created_at.isoformat()}
+            for u in users
+        ],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 世界书管理
+# ---------------------------------------------------------------------------
+@router.get("/world-entries")
+async def list_world_entries(
+    scenario: str = Query("", description="场景过滤"),
+    layer: str = Query("", description="层级过滤"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(WorldEntry).order_by(WorldEntry.priority.desc(), WorldEntry.id)
+    if scenario:
+        query = query.where(WorldEntry.scenario == scenario)
+    if layer:
+        query = query.where(WorldEntry.layer == layer)
+
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
+    result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
+    entries = result.scalars().all()
+
+    return {
+        "entries": [
+            {
+                "id": e.id, "scenario": e.scenario, "layer": e.layer,
+                "category": e.category, "title": e.title, "keywords": e.keywords,
+                "content": e.content, "chapter_min": e.chapter_min,
+                "chapter_max": e.chapter_max, "priority": e.priority,
+                "is_active": e.is_active,
+            }
+            for e in entries
+        ],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+@router.post("/world-entries")
+async def create_world_entry(
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    entry = WorldEntry(
+        scenario=data.get("scenario", "*"),
+        layer=data.get("layer", "core"),
+        category=data.get("category", "lore"),
+        title=data.get("title", ""),
+        keywords=data.get("keywords", ""),
+        content=data.get("content", ""),
+        chapter_min=data.get("chapter_min", 0),
+        chapter_max=data.get("chapter_max", 0),
+        priority=data.get("priority", 0),
+        is_active=data.get("is_active", True),
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return {"id": entry.id, "title": entry.title}
+
+
+@router.put("/world-entries/{entry_id}")
+async def update_world_entry(
+    entry_id: int,
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(WorldEntry).where(WorldEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="条目不存在")
+
+    for field in ["scenario", "layer", "category", "title", "keywords",
+                  "content", "chapter_min", "chapter_max", "priority", "is_active"]:
+        if field in data:
+            setattr(entry, field, data[field])
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/world-entries/{entry_id}")
+async def delete_world_entry(
+    entry_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(WorldEntry).where(WorldEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    await db.delete(entry)
+    await db.commit()
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Prompt 模板管理
+# ---------------------------------------------------------------------------
+@router.get("/prompt-templates")
+async def list_prompt_templates(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(PromptTemplate).where(PromptTemplate.is_active == True)
+        .order_by(PromptTemplate.name, PromptTemplate.version.desc())
+    )
+    templates = result.scalars().all()
+    return {
+        "templates": [
+            {
+                "id": t.id, "name": t.name, "scenario": t.scenario,
+                "version": t.version, "content": t.content, "is_active": t.is_active,
+            }
+            for t in templates
+        ]
+    }
+
+
+@router.put("/prompt-templates/{template_id}")
+async def update_prompt_template(
+    template_id: int,
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(PromptTemplate).where(PromptTemplate.id == template_id))
+    tpl = result.scalar_one_or_none()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="模板不存在")
+
+    if "content" in data:
+        # 版本化：创建新版本而非覆盖
+        tpl.is_active = False
+        new_tpl = PromptTemplate(
+            name=tpl.name,
+            scenario=tpl.scenario,
+            version=tpl.version + 1,
+            content=data["content"],
+            is_active=True,
+        )
+        db.add(new_tpl)
+    await db.commit()
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# 健康与指标端点
+# ---------------------------------------------------------------------------
+@router.get("/health")
+async def get_health(admin: User = Depends(require_admin)):
+    """系统健康报告"""
+    return {
+        "circuit_breakers": {
+            "llm_primary": llm_circuit_breaker.get_stats(),
+            "llm_fallback": llm_fallback_circuit_breaker.get_stats(),
+        },
+        "rate_limiter": game_rate_limiter.get_stats(),
+        "metrics": health_metrics.get_report(),
+    }
