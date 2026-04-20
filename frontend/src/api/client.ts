@@ -149,6 +149,10 @@ export const api = {
   // Admin
   getAdminStats: () => request<any>('/admin/stats'),
   getAdminHealth: () => request<any>('/admin/health'),
+  getCostAlertSettings: () => request<any>('/admin/cost-alert-settings'),
+  updateCostAlertSettings: (data: any) =>
+    request<any>('/admin/cost-alert-settings', { method: 'PUT', body: JSON.stringify(data) }),
+  testCostWebhook: () => request<any>('/admin/test-cost-webhook', { method: 'POST' }),
   getLlmTrend: (hours = 24) => request<any>(`/admin/llm-trend?hours=${hours}`),
   exportLlmUsage: async (days: number, fmt: 'csv' | 'json') => {
     const resp = await fetch(`${API_BASE}/admin/llm-export?days=${days}&fmt=${fmt}`, {

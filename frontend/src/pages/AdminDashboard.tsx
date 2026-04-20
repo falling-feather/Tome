@@ -59,19 +59,64 @@ export function AdminDashboard() {
   const [trendLoading, setTrendLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [alertSettings, setAlertSettings] = useState<any>({
+    llm_daily_usd_limit: 0,
+    llm_monthly_usd_limit: 0,
+    llm_alert_webhook_url: '',
+    llm_alert_webhook_cooldown_sec: 3600,
+  });
+  const [alertBusy, setAlertBusy] = useState<'save' | 'test' | null>(null);
+  const [alertMsg, setAlertMsg] = useState('');
 
   useEffect(() => {
     Promise.all([
       api.getAdminStats().catch(() => null),
       api.getAdminHealth().catch(() => null),
       api.getLlmTrend(24).catch(() => null),
-    ]).then(([s, h, t]) => {
+      api.getCostAlertSettings().catch(() => null),
+    ]).then(([s, h, trendData, alertCfg]) => {
       setStats(s);
       setHealth(h);
-      setTrend(t);
+      setTrend(trendData);
+      if (alertCfg) setAlertSettings(alertCfg);
       setLoading(false);
     });
   }, []);
+
+  const saveAlertSettings = async () => {
+    setAlertBusy('save');
+    setAlertMsg('');
+    try {
+      const saved = await api.updateCostAlertSettings({
+        llm_daily_usd_limit: Number(alertSettings.llm_daily_usd_limit || 0),
+        llm_monthly_usd_limit: Number(alertSettings.llm_monthly_usd_limit || 0),
+        llm_alert_webhook_url: String(alertSettings.llm_alert_webhook_url || '').trim(),
+        llm_alert_webhook_cooldown_sec: Number(alertSettings.llm_alert_webhook_cooldown_sec || 0),
+      });
+      setAlertSettings(saved);
+      setAlertMsg(t('admin.alertSavedOk'));
+      const refreshed = await api.getAdminHealth().catch(() => null);
+      if (refreshed) setHealth(refreshed);
+    } catch (e: any) {
+      setAlertMsg(e?.message || String(e));
+    } finally {
+      setAlertBusy(null);
+    }
+  };
+
+  const sendTestWebhook = async () => {
+    setAlertBusy('test');
+    setAlertMsg('');
+    try {
+      const res = await api.testCostWebhook();
+      if (!res.configured) setAlertMsg(t('admin.alertNotConfigured'));
+      else setAlertMsg(res.ok ? t('admin.alertTestOk') : t('admin.alertTestFailed'));
+    } catch (e: any) {
+      setAlertMsg(e?.message || String(e));
+    } finally {
+      setAlertBusy(null);
+    }
+  };
 
   // 切换时间范围
   useEffect(() => {
@@ -110,6 +155,39 @@ export function AdminDashboard() {
       {health && health.cost_alerts && (
         <CostAlertBanner alerts={health.cost_alerts} />
       )}
+
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <h3 className="admin-section-title" style={{ marginTop: 0 }}>{t('admin.alertConfigTitle')}</h3>
+        <div className="admin-meta" style={{ marginBottom: 12 }}>{t('admin.alertConfigDesc')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span>{t('admin.alertDailyLimit')}</span>
+            <input type="number" min="0" step="0.01" value={alertSettings.llm_daily_usd_limit ?? 0} onChange={(e) => setAlertSettings((s: any) => ({ ...s, llm_daily_usd_limit: e.target.value }))} />
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span>{t('admin.alertMonthlyLimit')}</span>
+            <input type="number" min="0" step="0.01" value={alertSettings.llm_monthly_usd_limit ?? 0} onChange={(e) => setAlertSettings((s: any) => ({ ...s, llm_monthly_usd_limit: e.target.value }))} />
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span>{t('admin.alertCooldownSec')}</span>
+            <input type="number" min="0" step="1" value={alertSettings.llm_alert_webhook_cooldown_sec ?? 0} onChange={(e) => setAlertSettings((s: any) => ({ ...s, llm_alert_webhook_cooldown_sec: e.target.value }))} />
+          </label>
+          <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
+            <span>{t('admin.alertWebhookUrl')}</span>
+            <input type="url" placeholder="https://example.com/webhook" value={alertSettings.llm_alert_webhook_url ?? ''} onChange={(e) => setAlertSettings((s: any) => ({ ...s, llm_alert_webhook_url: e.target.value }))} />
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={saveAlertSettings} disabled={alertBusy !== null}>
+            {alertBusy === 'save' ? t('common.loading') : t('admin.alertSaveConfig')}
+          </button>
+          <button className="btn" onClick={sendTestWebhook} disabled={alertBusy !== null}>
+            {alertBusy === 'test' ? t('common.loading') : t('admin.alertSendTest')}
+          </button>
+          {alertMsg && <span className="admin-meta">{alertMsg}</span>}
+        </div>
+      </div>
+
       <h2 className="admin-section-title">{t('admin.overview')}</h2>
       <div className="stats-grid">
         <div className="stat-card">

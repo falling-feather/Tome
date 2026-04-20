@@ -479,6 +479,55 @@ async def update_prompt_template(
 # ---------------------------------------------------------------------------
 # 健康与指标端点
 # ---------------------------------------------------------------------------
+def _serialize_cost_alert_settings() -> dict:
+    return {
+        "llm_daily_usd_limit": float(settings.LLM_DAILY_USD_LIMIT or 0.0),
+        "llm_monthly_usd_limit": float(settings.LLM_MONTHLY_USD_LIMIT or 0.0),
+        "llm_alert_webhook_url": settings.LLM_ALERT_WEBHOOK_URL or "",
+        "llm_alert_webhook_cooldown_sec": int(settings.LLM_ALERT_WEBHOOK_COOLDOWN_SEC or 0),
+    }
+
+
+@router.get("/cost-alert-settings")
+async def get_cost_alert_settings(admin: User = Depends(require_admin)):
+    return _serialize_cost_alert_settings()
+
+
+@router.put("/cost-alert-settings")
+async def update_cost_alert_settings(
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+):
+    try:
+        if "llm_daily_usd_limit" in data:
+            value = float(data.get("llm_daily_usd_limit") or 0.0)
+            if value < 0:
+                raise HTTPException(status_code=400, detail="daily limit 不能为负数")
+            settings.LLM_DAILY_USD_LIMIT = value
+
+        if "llm_monthly_usd_limit" in data:
+            value = float(data.get("llm_monthly_usd_limit") or 0.0)
+            if value < 0:
+                raise HTTPException(status_code=400, detail="monthly limit 不能为负数")
+            settings.LLM_MONTHLY_USD_LIMIT = value
+
+        if "llm_alert_webhook_url" in data:
+            url = str(data.get("llm_alert_webhook_url") or "").strip()
+            if url and not (url.startswith("http://") or url.startswith("https://")):
+                raise HTTPException(status_code=400, detail="webhook url 必须以 http:// 或 https:// 开头")
+            settings.LLM_ALERT_WEBHOOK_URL = url
+
+        if "llm_alert_webhook_cooldown_sec" in data:
+            value = int(data.get("llm_alert_webhook_cooldown_sec") or 0)
+            if value < 0:
+                raise HTTPException(status_code=400, detail="cooldown 不能为负数")
+            settings.LLM_ALERT_WEBHOOK_COOLDOWN_SEC = value
+    except ValueError:
+        raise HTTPException(status_code=400, detail="配置值格式错误")
+
+    return _serialize_cost_alert_settings()
+
+
 @router.get("/health")
 async def get_health(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """系统健康报告"""
