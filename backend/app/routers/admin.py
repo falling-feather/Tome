@@ -407,3 +407,77 @@ async def get_llm_trend(
     hours = max(1, min(int(hours or 24), 24 * 30))  # cap 30 days
     points = await get_usage_trend(db, hours=hours)
     return {"hours": hours, "points": points}
+
+
+@router.get("/llm-export")
+async def export_llm_usage(
+    days: int = 7,
+    fmt: str = "csv",
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """导出最近 N 天 LLM 使用明细（按 hour_bucket+model 行），格式 csv 或 json。"""
+    import datetime as _dt
+    from fastapi.responses import Response, JSONResponse
+    from backend.app.services.cost import flush_pending_to_db
+    from backend.app.models import LlmUsageHour
+
+    fmt = (fmt or "csv").lower()
+    if fmt not in ("csv", "json"):
+        raise HTTPException(status_code=400, detail="fmt 必须为 csv 或 json")
+    days = max(1, min(int(days or 7), 365))
+    try:
+        await flush_pending_to_db(db)
+    except Exception:
+        pass
+
+    cutoff = _dt.datetime.utcnow().replace(minute=0, second=0, microsecond=0) - _dt.timedelta(days=days)
+    stmt = (
+        select(
+            LlmUsageHour.hour_bucket,
+            LlmUsageHour.model,
+            LlmUsageHour.requests,
+            LlmUsageHour.input_tokens,
+            LlmUsageHour.output_tokens,
+            LlmUsageHour.cost_usd,
+        )
+        .where(LlmUsageHour.hour_bucket >= cutoff)
+        .order_by(LlmUsageHour.hour_bucket.asc(), LlmUsageHour.model.asc())
+    )
+    rows = (await db.execute(stmt)).all()
+    today = _dt.datetime.utcnow().strftime("%Y%m%d")
+    if fmt == "json":
+        data = [
+            {
+                "hour_bucket": r.hour_bucket.isoformat() + "Z",
+                "model": r.model,
+                "requests": int(r.requests or 0),
+                "input_tokens": int(r.input_tokens or 0),
+                "output_tokens": int(r.output_tokens or 0),
+                "cost_usd": float(r.cost_usd or 0.0),
+            }
+            for r in rows
+        ]
+        return JSONResponse(
+            {"days": days, "count": len(data), "rows": data},
+            headers={"Content-Disposition": f'attachment; filename="llm-usage-{today}.json"'},
+        )
+    # csv
+    import io, csv
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["hour_bucket_utc", "model", "requests", "input_tokens", "output_tokens", "cost_usd"])
+    for r in rows:
+        w.writerow([
+            r.hour_bucket.isoformat() + "Z",
+            r.model,
+            int(r.requests or 0),
+            int(r.input_tokens or 0),
+            int(r.output_tokens or 0),
+            f"{float(r.cost_usd or 0.0):.6f}",
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="llm-usage-{today}.csv"'},
+    )

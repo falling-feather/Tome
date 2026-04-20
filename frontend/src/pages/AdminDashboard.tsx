@@ -238,6 +238,27 @@ export function AdminDashboard() {
           <div className="card" style={{ padding: 12, marginTop: 8 }}>
             <LlmTrendChart points={trend.points} hours={trend.hours} metric={trendMetric} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <span className="admin-meta">导出最近</span>
+            {[1, 7, 30].map((d) => (
+              <button
+                key={`csv-${d}`}
+                className="btn"
+                onClick={() => api.exportLlmUsage(d, 'csv').catch((e) => alert(String(e)))}
+              >
+                {d}天 CSV
+              </button>
+            ))}
+            {[1, 7, 30].map((d) => (
+              <button
+                key={`json-${d}`}
+                className="btn"
+                onClick={() => api.exportLlmUsage(d, 'json').catch((e) => alert(String(e)))}
+              >
+                {d}天 JSON
+              </button>
+            ))}
+          </div>
         </>
       )}
 

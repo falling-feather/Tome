@@ -149,6 +149,24 @@ export const api = {
   getAdminStats: () => request<any>('/admin/stats'),
   getAdminHealth: () => request<any>('/admin/health'),
   getLlmTrend: (hours = 24) => request<any>(`/admin/llm-trend?hours=${hours}`),
+  exportLlmUsage: async (days: number, fmt: 'csv' | 'json') => {
+    const resp = await fetch(`${API_BASE}/admin/llm-export?days=${days}&fmt=${fmt}`, {
+      headers: authHeaders(),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(body.detail || '导出失败');
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    const m = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    a.download = m ? decodeURIComponent(m[1]) : `llm-usage.${fmt}`;
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   getAdminLogs: (params: { page?: number; page_size?: number; action?: string; username?: string }) => {
     const qs = new URLSearchParams();
     if (params.page) qs.set('page', String(params.page));
