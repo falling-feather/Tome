@@ -76,40 +76,71 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
-  // Game Action (SSE)
-  submitAction: async function* (sessionId: string, content: string) {
-    const resp = await fetch(`${API_BASE}/game/sessions/${sessionId}/action`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ content }),
-    });
-
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ detail: resp.statusText }));
-      throw new Error(body.detail || '请求失败');
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error('无法读取响应流');
-
-    const decoder = new TextDecoder();
-    let buffer = '';
+  // Game Action (SSE) with abort + automatic reconnect on transient connection failures
+  // before any data was received. Once tokens start arriving, errors propagate to the caller.
+  submitAction: async function* (
+    sessionId: string,
+    content: string,
+    opts: { signal?: AbortSignal; maxRetries?: number; onRetry?: (attempt: number, err: unknown) => void } = {},
+  ) {
+    const { signal, maxRetries = 2, onRetry } = opts;
+    let attempt = 0;
+    let receivedAny = false;
 
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {}
+      let resp: Response;
+      try {
+        resp = await fetch(`${API_BASE}/game/sessions/${sessionId}/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ content }),
+          signal,
+        });
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        if (!receivedAny && attempt < maxRetries) {
+          attempt += 1;
+          onRetry?.(attempt, err);
+          await new Promise((r) => setTimeout(r, 400 * Math.pow(2, attempt - 1)));
+          continue;
         }
+        throw err;
+      }
+
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw new Error(body.detail || '请求失败');
+      }
+
+      const reader = resp.body?.getReader();
+      if (!reader) throw new Error('无法读取响应流');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                receivedAny = true;
+                yield data;
+              } catch {}
+            }
+          }
+        }
+        return;
+      } catch (err: any) {
+        try { reader.cancel(); } catch {}
+        if (err?.name === 'AbortError') return;
+        // Mid-stream failure — do NOT silently retry (action might already be persisted server-side).
+        throw err;
       }
     }
   },

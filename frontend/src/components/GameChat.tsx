@@ -61,6 +61,30 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const userAtBottomRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  // rAF batching: avoid React re-render per token to prevent jank on slow devices.
+  const pendingFlushRef = useRef<number | null>(null);
+  const pendingMessagesRef = useRef<Message[] | null>(null);
+  const pendingStateRef = useRef<any>(undefined);
+
+  const scheduleFlush = useCallback((updated: Message[], state?: any) => {
+    pendingMessagesRef.current = updated;
+    if (state !== undefined) pendingStateRef.current = state;
+    if (pendingFlushRef.current != null) return;
+    pendingFlushRef.current = requestAnimationFrame(() => {
+      pendingFlushRef.current = null;
+      const msgs = pendingMessagesRef.current;
+      const st = pendingStateRef.current;
+      pendingMessagesRef.current = null;
+      pendingStateRef.current = undefined;
+      if (msgs) onMessagesUpdate(msgs, st);
+    });
+  }, [onMessagesUpdate]);
+
+  useEffect(() => () => {
+    if (pendingFlushRef.current != null) cancelAnimationFrame(pendingFlushRef.current);
+    abortRef.current?.abort();
+  }, []);
 
   /** 检测用户是否在聊天底部附近 */
   const checkIfAtBottom = useCallback(() => {
@@ -96,7 +120,13 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
 
     try {
       let fullContent = '';
-      for await (const data of api.submitAction(sessionId, text)) {
+      const ac = new AbortController();
+      abortRef.current = ac;
+      const iterator = api.submitAction(sessionId, text, {
+        signal: ac.signal,
+        onRetry: (n) => setStreamPhase(`连接断开，正在重连…(第 ${n} 次)`),
+      });
+      for await (const data of iterator) {
         if (data.phase === 'validated') {
           setStreamPhase('叙事生成中…');
         } else if (data.phase === 'event_triggered') {
@@ -110,7 +140,7 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
         if (data.content) {
           fullContent += data.content;
           const updated = [...updatedMessages, { role: 'assistant', content: fullContent }];
-          onMessagesUpdate(updated);
+          scheduleFlush(updated);
         }
         if (data.done) {
           // Parse segments from done event
@@ -120,22 +150,34 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
             content: fullContent,
             segments: segments.length > 0 ? segments : undefined,
           };
-          onMessagesUpdate(
-            [...updatedMessages, finalMsg],
-            data.state || undefined,
-          );
+          // Force-flush final state synchronously (cancel pending rAF).
+          if (pendingFlushRef.current != null) {
+            cancelAnimationFrame(pendingFlushRef.current);
+            pendingFlushRef.current = null;
+          }
+          onMessagesUpdate([...updatedMessages, finalMsg], data.state || undefined);
           // 音效 & 通知
           playMessageSound();
           sendNotification('不存在之书', fullContent.slice(0, 80) + (fullContent.length > 80 ? '...' : ''));
         }
       }
     } catch (err: any) {
-      const errorMsg: Message = { role: 'system', content: `错误：${err.message}` };
-      onMessagesUpdate([...updatedMessages, errorMsg]);
+      if (err?.name === 'AbortError') {
+        const abortMsg: Message = { role: 'system', content: '已停止生成。' };
+        onMessagesUpdate([...updatedMessages, abortMsg]);
+      } else {
+        const errorMsg: Message = { role: 'system', content: `错误：${err.message}` };
+        onMessagesUpdate([...updatedMessages, errorMsg]);
+      }
     } finally {
+      abortRef.current = null;
       setIsStreaming(false);
       setStreamPhase('');
     }
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -266,6 +308,11 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
           <button className="btn btn-primary" onClick={handleSubmit} disabled={isStreaming || !input.trim()}>
             {isStreaming ? <span className="spinner" /> : '发送'}
           </button>
+          {isStreaming && (
+            <button className="btn btn-ghost" onClick={handleStop} title="停止生成">
+              停止
+            </button>
+          )}
         </div>
       </div>
     </div>
