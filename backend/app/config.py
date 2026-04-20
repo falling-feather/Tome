@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "*"  # 逗号分隔白名单, 如 "http://localhost:5173,https://example.com"
 
-    APP_VERSION: str = "2.6.0"
+    APP_VERSION: str = "2.7.0"
 
     # 审计代理阈值 — 累计问题数 ≥ 此值时触发 LLM 重写, ×1.6 时降级到安全模板
     AUDIT_REWRITE_THRESHOLD: int = 5
@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: str = "openai"  # 复用 user_api_keys 中对应 provider 的 base_url + api_key
     EMBEDDING_ENABLED: bool = True
     EMBEDDING_WEIGHT: float = 50.0  # cosine 相似度乘以此权重后并入 keyword 评分
+
+    # OpenTelemetry 可观测性 (P1-22)
+    OTEL_ENABLED: bool = False  # 总开关；关闭时完全跳过 OTel 初始化
+    OTEL_SERVICE_NAME: str = "inkless-backend"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""  # 如 "http://localhost:4318"，留空则仅打印到控制台
+    OTEL_CONSOLE_EXPORT: bool = True  # 是否同时输出 span 到控制台（开发期排错）
+    OTEL_SAMPLE_RATIO: float = 1.0  # 0.0 ~ 1.0，1.0 = 全量
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

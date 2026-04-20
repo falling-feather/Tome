@@ -10,6 +10,7 @@ from backend.app.models import UserApiKey
 from backend.app.services.prompt_assembler import PromptAssembler
 from backend.app.services.world_book import WorldBookService
 from backend.app.services.memory_service import MemoryService
+from backend.app.tracing import traced_span
 
 logger = logging.getLogger("inkless")
 from backend.app.services.resilience import (
@@ -196,7 +197,13 @@ class LLMService:
     ) -> AsyncGenerator[str, None]:
         api_key, base_url, model = self._get_provider()
 
-        system_prompt = await self.build_system_prompt(state, event_context, user_action, session_id)
+        with traced_span(
+            "llm.build_system_prompt",
+            session_id=session_id,
+            history_len=len(history),
+            scenario=str(state.get("scenario") or ""),
+        ):
+            system_prompt = await self.build_system_prompt(state, event_context, user_action, session_id)
 
         messages = [{"role": "system", "content": system_prompt}]
 

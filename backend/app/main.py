@@ -17,6 +17,7 @@ from backend.app.middleware import RequestLoggingMiddleware
 from backend.app.routers import auth, game, admin
 from backend.app.routers import settings as settings_router
 from backend.app.routers import stories as stories_router
+from backend.app.tracing import init_tracing
 
 setup_logging()
 logger = logging.getLogger("inkless")
@@ -74,6 +75,10 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan,
 )
+
+# OpenTelemetry — 必须在 add_middleware 之前调用以便 FastAPIInstrumentor
+# 能正确包装 ASGI 应用；当 OTEL_ENABLED=false 或依赖缺失时全部 no-op。
+init_tracing(app)
 
 _cors_origins = (
     [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]

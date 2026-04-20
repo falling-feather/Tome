@@ -22,6 +22,7 @@ from backend.app.services.post_processor import ResponsePostProcessor
 from backend.app.services.memory_service import MemoryService
 from backend.app.services.agents import AgentOrchestrator
 from backend.app.services.resilience import game_rate_limiter, health_metrics, daily_quota
+from backend.app.tracing import traced_span
 
 logger = logging.getLogger("inkless")
 
@@ -231,8 +232,9 @@ async def submit_action(
                 yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
 
             # Post-process the response
-            processor = ResponsePostProcessor()
-            post_result = processor.process(full_response, state)
+            with traced_span("game.post_process", session_id=session_id, response_chars=len(full_response)):
+                processor = ResponsePostProcessor()
+                post_result = processor.process(full_response, state)
             cleaned_text = post_result["cleaned_text"]
             extracted = post_result["extracted"]
             # Phase 2: 后处理结构化产出
