@@ -1,13 +1,14 @@
 {
   "name": "inkless-frontend",
   "private": true,
-  "version": "2.20.0",
+  "version": "2.21.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:pages": "tsc && cross-env VITE_BASE=/Tome/ vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "i18n:check": "node ../scripts/i18n_check.cjs"
   },
   "dependencies": {
     "i18next": "^26.0.6",
