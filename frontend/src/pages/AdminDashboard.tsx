@@ -8,6 +8,45 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+function CostAlertBanner({ alerts }: { alerts: any }) {
+  const items: { label: string; data: any }[] = [
+    { label: '今日', data: alerts.daily },
+    { label: '本月', data: alerts.monthly },
+  ];
+  const visible = items.filter((it) => it.data && it.data.level !== 'off' && it.data.level !== 'ok');
+  if (visible.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+      {visible.map((it) => {
+        const bg = it.data.level === 'breached' ? 'rgba(220, 38, 38, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+        const border = it.data.level === 'breached' ? 'var(--error)' : 'var(--warning)';
+        const color = it.data.level === 'breached' ? 'var(--error)' : 'var(--warning)';
+        const pct = Math.round(it.data.ratio * 100);
+        return (
+          <div
+            key={it.label}
+            style={{
+              padding: '10px 14px',
+              border: `1px solid ${border}`,
+              background: bg,
+              color,
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 13,
+            }}
+          >
+            <strong>{it.label}LLM 费用</strong>
+            {' '}
+            {it.data.level === 'breached' ? '已超过阈值' : '已接近阈值'}：
+            <span className="mono"> ${it.data.used_usd.toFixed(4)}</span> /
+            <span className="mono"> ${it.data.limit_usd.toFixed(4)}</span>
+            （{pct}%，剩余 <span className="mono">${it.data.remaining_usd.toFixed(4)}</span>）
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
   const [health, setHealth] = useState<any>(null);
@@ -43,6 +82,9 @@ export function AdminDashboard() {
 
   return (
     <div className="fade-in">
+      {health && health.cost_alerts && (
+        <CostAlertBanner alerts={health.cost_alerts} />
+      )}
       <h2 className="admin-section-title">系统概览</h2>
       <div className="stats-grid">
         <div className="stat-card">

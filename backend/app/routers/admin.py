@@ -370,11 +370,15 @@ async def update_prompt_template(
 @router.get("/health")
 async def get_health(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """系统健康报告"""
-    from backend.app.services.cost import compute_cost_report, flush_pending_to_db
+    from backend.app.services.cost import compute_cost_report, flush_pending_to_db, get_cost_alerts
     try:
         await flush_pending_to_db(db)
     except Exception:
         pass
+    try:
+        cost_alerts = await get_cost_alerts(db)
+    except Exception:
+        cost_alerts = None
     return {
         "circuit_breakers": {
             "llm_primary": llm_circuit_breaker.get_stats(),
@@ -384,6 +388,7 @@ async def get_health(admin: User = Depends(require_admin), db: AsyncSession = De
         "daily_quota": daily_quota.get_stats(),
         "metrics": health_metrics.get_report(),
         "llm_cost": compute_cost_report(),
+        "cost_alerts": cost_alerts,
     }
 
 

@@ -223,3 +223,59 @@ async def get_usage_trend(db, hours: int = 24) -> list[dict]:
         }
         for r in rows
     ]
+
+
+async def get_cost_alerts(db) -> dict:
+    """统计今日 (UTC) 与本月已花费 USD，对照 settings 阈值给出 banner 状态。"""
+    from sqlalchemy import select, func
+    from backend.app.models import LlmUsageHour
+    import datetime as _dt
+
+    now = _dt.datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    async def _sum(since):
+        stmt = select(func.coalesce(func.sum(LlmUsageHour.cost_usd), 0.0)).where(
+            LlmUsageHour.hour_bucket >= since
+        )
+        v = (await db.execute(stmt)).scalar()
+        return float(v or 0.0)
+
+    daily_used = await _sum(today_start)
+    monthly_used = await _sum(month_start)
+
+    daily_limit = float(settings.LLM_DAILY_USD_LIMIT or 0.0)
+    monthly_limit = float(settings.LLM_MONTHLY_USD_LIMIT or 0.0)
+    rate = float(settings.USD_TO_CNY)
+
+    def _status(used, limit):
+        if limit <= 0:
+            return {
+                "limit_usd": 0.0,
+                "used_usd": round(used, 4),
+                "used_cny": round(used * rate, 4),
+                "ratio": 0.0,
+                "level": "off",
+                "remaining_usd": None,
+            }
+        ratio = used / limit if limit > 0 else 0.0
+        level = "ok"
+        if ratio >= 1.0:
+            level = "breached"
+        elif ratio >= 0.8:
+            level = "warn"
+        return {
+            "limit_usd": round(limit, 4),
+            "limit_cny": round(limit * rate, 4),
+            "used_usd": round(used, 4),
+            "used_cny": round(used * rate, 4),
+            "ratio": round(ratio, 4),
+            "level": level,
+            "remaining_usd": round(max(0.0, limit - used), 4),
+        }
+
+    return {
+        "daily": _status(daily_used, daily_limit),
+        "monthly": _status(monthly_used, monthly_limit),
+    }
