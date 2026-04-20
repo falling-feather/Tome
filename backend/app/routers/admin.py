@@ -90,6 +90,44 @@ async def list_users(
     }
 
 
+@router.post("/users/bulk")
+async def bulk_users(
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """对一组 user id 批量执行 promote / demote。
+
+    入参: {"ids": [int, ...], "action": "promote" | "demote"}
+    返回: {"action", "affected", "requested"}
+    出于安全考虑：不允许对当前管理员自身降权；不支持批量删除。
+    """
+    ids = data.get("ids") or []
+    action = (data.get("action") or "").lower().strip()
+    if action not in ("promote", "demote"):
+        raise HTTPException(status_code=400, detail="action 必须是 promote/demote")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="ids 必须是整数列表")
+    if len(ids) > 1000:
+        raise HTTPException(status_code=400, detail="单次最多处理 1000 条")
+
+    target = action == "promote"
+    rows = (await db.execute(select(User).where(User.id.in_(ids)))).scalars().all()
+    affected = 0
+    for r in rows:
+        if not target and r.id == admin.id:
+            continue
+        if r.is_admin != target:
+            r.is_admin = target
+            affected += 1
+    await db.commit()
+    return {"action": action, "affected": affected, "requested": len(ids)}
+
+
 # ---------------------------------------------------------------------------
 # 世界书管理
 # ---------------------------------------------------------------------------
@@ -350,6 +388,39 @@ async def delete_game_event(
     await db.delete(event)
     await db.commit()
     return {"status": "ok"}
+
+
+@router.post("/game-events/bulk")
+async def bulk_game_events(
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """对一组 game_event id 批量删除。
+
+    入参: {"ids": [int, ...], "action": "delete"}
+    返回: {"action", "affected", "requested"}
+    """
+    ids = data.get("ids") or []
+    action = (data.get("action") or "").lower().strip()
+    if action != "delete":
+        raise HTTPException(status_code=400, detail="action 必须是 delete")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="ids 必须是整数列表")
+    if len(ids) > 1000:
+        raise HTTPException(status_code=400, detail="单次最多处理 1000 条")
+
+    rows = (await db.execute(select(GameEvent).where(GameEvent.id.in_(ids)))).scalars().all()
+    affected = 0
+    for r in rows:
+        await db.delete(r)
+        affected += 1
+    await db.commit()
+    return {"action": action, "affected": affected, "requested": len(ids)}
 
 
 # ---------------------------------------------------------------------------

@@ -48,6 +48,8 @@ export function AdminGameEvents() {
   const [conditionsText, setConditionsText] = useState('{}');
   const [effectsText, setEffectsText] = useState('{}');
   const [error, setError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -63,6 +65,41 @@ export function AdminGameEvents() {
   };
 
   useEffect(() => { load(); }, [filterCategory, filterScenario]);
+  useEffect(() => { setSelectedIds(new Set()); }, [filterCategory, filterScenario]);
+
+  const allOnPageSelected = events.length > 0 && events.every((e) => selectedIds.has(e.id));
+  const toggleAll = () => {
+    if (allOnPageSelected) {
+      const next = new Set(selectedIds);
+      events.forEach((e) => next.delete(e.id));
+      setSelectedIds(next);
+    } else {
+      const next = new Set(selectedIds);
+      events.forEach((e) => next.add(e.id));
+      setSelectedIds(next);
+    }
+  };
+  const toggleOne = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+  };
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!confirm(`确定批量删除 ${ids.length} 条事件？此操作不可恢复。`)) return;
+    setBulkRunning(true);
+    try {
+      const res = await api.bulkGameEvents(ids, 'delete');
+      alert(`已删除 ${res.affected}/${res.requested} 条`);
+      setSelectedIds(new Set());
+      await load();
+    } catch (e: any) {
+      alert(e.message || '批量删除失败');
+    } finally {
+      setBulkRunning(false);
+    }
+  };
 
   const startEdit = (ev: GameEvent) => {
     setEditing(ev);
@@ -161,6 +198,14 @@ export function AdminGameEvents() {
         <span className="admin-count">共 {events.length} 条</span>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="admin-filters" style={{ marginTop: 8 }}>
+          <span className="admin-count" style={{ color: 'var(--primary)' }}>已选 {selectedIds.size} 条</span>
+          <button className="btn-danger" disabled={bulkRunning} onClick={handleBulkDelete}>批量删除</button>
+          <button disabled={bulkRunning} onClick={() => setSelectedIds(new Set())}>清除选择</button>
+        </div>
+      )}
+
       {error && <div className="admin-error">{error}</div>}
 
       {(editing || creating) && (
@@ -220,12 +265,29 @@ export function AdminGameEvents() {
         <table className="admin-table">
           <thead>
             <tr>
+              <th style={{ width: 32 }}>
+                <input
+                  type="checkbox"
+                  checked={allOnPageSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = !allOnPageSelected && events.some((e) => selectedIds.has(e.id));
+                  }}
+                  onChange={toggleAll}
+                />
+              </th>
               <th>ID</th><th>Key</th><th>分类</th><th>标题</th><th>权重</th><th>冷却</th><th>场景</th><th>操作</th>
             </tr>
           </thead>
           <tbody>
             {events.map(ev => (
               <tr key={ev.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(ev.id)}
+                    onChange={() => toggleOne(ev.id)}
+                  />
+                </td>
                 <td>{ev.id}</td>
                 <td><code>{ev.event_key}</code></td>
                 <td>{ev.category}</td>
@@ -240,7 +302,7 @@ export function AdminGameEvents() {
               </tr>
             ))}
             {events.length === 0 && (
-              <tr><td colSpan={8} className="admin-empty">暂无事件</td></tr>
+              <tr><td colSpan={9} className="admin-empty">暂无事件</td></tr>
             )}
           </tbody>
         </table>

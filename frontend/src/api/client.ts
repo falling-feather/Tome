@@ -225,6 +225,16 @@ export const api = {
     request<any>(`/admin/game-events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteGameEvent: (id: number) =>
     request<any>(`/admin/game-events/${id}`, { method: 'DELETE' }),
+  bulkGameEvents: (ids: number[], action: 'delete') =>
+    request<{ action: string; affected: number; requested: number }>(
+      '/admin/game-events/bulk',
+      { method: 'POST', body: JSON.stringify({ ids, action }) },
+    ),
+  bulkUsers: (ids: number[], action: 'promote' | 'demote') =>
+    request<{ action: string; affected: number; requested: number }>(
+      '/admin/users/bulk',
+      { method: 'POST', body: JSON.stringify({ ids, action }) },
+    ),
 
   // Settings
   getApiKeys: () => request<{ keys: any[] }>('/settings/apikeys'),
