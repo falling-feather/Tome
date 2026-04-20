@@ -52,6 +52,9 @@ export function AdminDashboard() {
   const [health, setHealth] = useState<any>(null);
   const [trend, setTrend] = useState<any>(null);
   const [trendMetric, setTrendMetric] = useState<'tokens' | 'cost' | 'requests'>('tokens');
+  const [trendHours, setTrendHours] = useState<number>(24);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -66,6 +69,25 @@ export function AdminDashboard() {
       setLoading(false);
     });
   }, []);
+
+  // 切换时间范围
+  useEffect(() => {
+    if (loading) return;
+    setTrendLoading(true);
+    api.getLlmTrend(trendHours)
+      .then((t) => setTrend(t))
+      .catch(() => {})
+      .finally(() => setTrendLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trendHours]);
+
+  // 关闭菜单
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = () => setMenuOpen(false);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [menuOpen]);
 
   if (loading) return <div className="flex items-center gap-sm"><div className="spinner" /> 加载中...</div>;
   if (!stats) return <div>加载失败</div>;
@@ -212,27 +234,95 @@ export function AdminDashboard() {
 
       {trend && trend.points && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24 }}>
-            <h3 className="admin-section-title" style={{ margin: 0 }}>近 {trend.hours}h LLM 调用趋势</h3>
-            <div className="log-filters" style={{ margin: 0 }}>
-              <button
-                className={trendMetric === 'tokens' ? 'btn btn-primary' : 'btn'}
-                onClick={() => setTrendMetric('tokens')}
-              >
-                Token
-              </button>
-              <button
-                className={trendMetric === 'cost' ? 'btn btn-primary' : 'btn'}
-                onClick={() => setTrendMetric('cost')}
-              >
-                费用
-              </button>
-              <button
-                className={trendMetric === 'requests' ? 'btn btn-primary' : 'btn'}
-                onClick={() => setTrendMetric('requests')}
-              >
-                请求数
-              </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, gap: 8, flexWrap: 'wrap' }}>
+            <h3 className="admin-section-title" style={{ margin: 0 }}>
+              近 {trendHours >= 24 ? `${Math.round(trendHours / 24)}d` : `${trendHours}h`} LLM 调用趋势
+              {trendLoading && <span className="admin-meta" style={{ marginLeft: 8 }}>加载中…</span>}
+            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div className="log-filters" style={{ margin: 0 }}>
+                {[
+                  { v: 24, label: '24h' },
+                  { v: 24 * 7, label: '7d' },
+                  { v: 24 * 30, label: '30d' },
+                ].map((o) => (
+                  <button
+                    key={o.v}
+                    className={trendHours === o.v ? 'btn btn-primary' : 'btn'}
+                    onClick={() => setTrendHours(o.v)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              <div className="log-filters" style={{ margin: 0 }}>
+                <button
+                  className={trendMetric === 'tokens' ? 'btn btn-primary' : 'btn'}
+                  onClick={() => setTrendMetric('tokens')}
+                >
+                  Token
+                </button>
+                <button
+                  className={trendMetric === 'cost' ? 'btn btn-primary' : 'btn'}
+                  onClick={() => setTrendMetric('cost')}
+                >
+                  费用
+                </button>
+                <button
+                  className={trendMetric === 'requests' ? 'btn btn-primary' : 'btn'}
+                  onClick={() => setTrendMetric('requests')}
+                >
+                  请求数
+                </button>
+              </div>
+              <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="btn"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label="更多操作"
+                  title="更多操作"
+                >
+                  ⋯
+                </button>
+                {menuOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      boxShadow: 'var(--shadow-md)',
+                      padding: 4,
+                      minWidth: 180,
+                      zIndex: 50,
+                    }}
+                  >
+                    {[
+                      { label: '导出当前范围 CSV', act: () => api.exportLlmUsage(Math.max(1, Math.round(trendHours / 24)), 'csv') },
+                      { label: '导出当前范围 JSON', act: () => api.exportLlmUsage(Math.max(1, Math.round(trendHours / 24)), 'json') },
+                      {
+                        label: '复制当前数据 JSON',
+                        act: async () => {
+                          await navigator.clipboard.writeText(JSON.stringify(trend, null, 2));
+                          alert('已复制到剪贴板');
+                        },
+                      },
+                      { label: '刷新', act: () => { setTrendHours((h) => h); api.getLlmTrend(trendHours).then(setTrend).catch(() => {}); } },
+                    ].map((it) => (
+                      <button
+                        key={it.label}
+                        className="btn"
+                        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '6px 10px' }}
+                        onClick={() => { setMenuOpen(false); Promise.resolve(it.act()).catch((e) => alert(String(e))); }}
+                      >
+                        {it.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="card" style={{ padding: 12, marginTop: 8 }}>
