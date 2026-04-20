@@ -214,6 +214,46 @@ async def reembed_world_entries(
     return await svc.reembed_all()
 
 
+@router.post("/world-entries/bulk")
+async def bulk_world_entries(
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """对一组 world_entry id 批量执行 enable / disable / delete。
+
+    入参: {"ids": [int, ...], "action": "enable" | "disable" | "delete"}
+    返回: {"action": ..., "affected": N}
+    """
+    ids = data.get("ids") or []
+    action = (data.get("action") or "").lower().strip()
+    if action not in ("enable", "disable", "delete"):
+        raise HTTPException(status_code=400, detail="action 必须是 enable/disable/delete")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="ids 必须是整数列表")
+    if len(ids) > 1000:
+        raise HTTPException(status_code=400, detail="单次最多处理 1000 条")
+
+    rows = (await db.execute(select(WorldEntry).where(WorldEntry.id.in_(ids)))).scalars().all()
+    affected = 0
+    if action == "delete":
+        for r in rows:
+            await db.delete(r)
+            affected += 1
+    else:
+        target = action == "enable"
+        for r in rows:
+            if r.is_active != target:
+                r.is_active = target
+                affected += 1
+    await db.commit()
+    return {"action": action, "affected": affected, "requested": len(ids)}
+
+
 # ---------------------------------------------------------------------------
 # 游戏事件池管理
 # ---------------------------------------------------------------------------

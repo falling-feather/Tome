@@ -200,6 +200,11 @@ export const api = {
       '/admin/world-entries/reembed',
       { method: 'POST' },
     ),
+  bulkWorldEntries: (ids: number[], action: 'enable' | 'disable' | 'delete') =>
+    request<{ action: string; affected: number; requested: number }>(
+      '/admin/world-entries/bulk',
+      { method: 'POST', body: JSON.stringify({ ids, action }) },
+    ),
 
   // Prompt Templates
   getPromptTemplates: () => request<any>('/admin/prompt-templates'),

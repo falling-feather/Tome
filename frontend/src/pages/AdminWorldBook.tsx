@@ -24,6 +24,8 @@ export function AdminWorldBook() {
   const [editing, setEditing] = useState<WorldEntry | null>(null);
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const blankEntry: Omit<WorldEntry, 'id'> = {
     scenario: '*', layer: 'core', category: 'lore', title: '', keywords: '',
@@ -85,6 +87,45 @@ export function AdminWorldBook() {
 
   const totalPages = Math.ceil(total / 50);
 
+  // 选择状态在分页/筛选切换后重置
+  useEffect(() => { setSelectedIds(new Set()); }, [page, filterScenario, filterLayer]);
+
+  const allOnPageSelected = entries.length > 0 && entries.every((e) => selectedIds.has(e.id));
+  const togglePageSelection = () => {
+    if (allOnPageSelected) {
+      const next = new Set(selectedIds);
+      entries.forEach((e) => next.delete(e.id));
+      setSelectedIds(next);
+    } else {
+      const next = new Set(selectedIds);
+      entries.forEach((e) => next.add(e.id));
+      setSelectedIds(next);
+    }
+  };
+  const toggleOne = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const runBulk = async (action: 'enable' | 'disable' | 'delete') => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const verb = action === 'enable' ? '启用' : action === 'disable' ? '禁用' : '删除';
+    if (!confirm(`确认${verb}选中的 ${ids.length} 条？${action === 'delete' ? '此操作不可撤销。' : ''}`)) return;
+    setBulkRunning(true);
+    try {
+      const r = await api.bulkWorldEntries(ids, action);
+      alert(`完成：${verb} ${r.affected} / ${r.requested} 条`);
+      setSelectedIds(new Set());
+      load();
+    } catch (e: any) {
+      alert(e.message || '失败');
+    } finally {
+      setBulkRunning(false);
+    }
+  };
+
   return (
     <div className="admin-section">
       <div className="admin-header-row">
@@ -120,6 +161,15 @@ export function AdminWorldBook() {
           ))}
         </select>
         <span className="admin-count">共 {total} 条</span>
+        {selectedIds.size > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 12 }}>
+            <span className="admin-count" style={{ color: 'var(--primary)' }}>已选 {selectedIds.size} 条</span>
+            <button className="btn-sm" disabled={bulkRunning} onClick={() => runBulk('enable')}>批量启用</button>
+            <button className="btn-sm" disabled={bulkRunning} onClick={() => runBulk('disable')}>批量禁用</button>
+            <button className="btn-sm btn-danger" disabled={bulkRunning} onClick={() => runBulk('delete')}>批量删除</button>
+            <button className="btn-sm" disabled={bulkRunning} onClick={() => setSelectedIds(new Set())}>清除选择</button>
+          </span>
+        )}
       </div>
 
       {(editing || creating) && (
@@ -170,6 +220,17 @@ export function AdminWorldBook() {
       <table className="admin-table">
         <thead>
           <tr>
+            <th style={{ width: 32 }}>
+              <input
+                type="checkbox"
+                checked={allOnPageSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = !allOnPageSelected && entries.some((e) => selectedIds.has(e.id));
+                }}
+                onChange={togglePageSelection}
+                aria-label="全选当前页"
+              />
+            </th>
             <th>标题</th>
             <th>场景</th>
             <th>层级</th>
@@ -181,9 +242,17 @@ export function AdminWorldBook() {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan={7} style={{ textAlign: 'center' }}>加载中...</td></tr>
+            <tr><td colSpan={8} style={{ textAlign: 'center' }}>加载中...</td></tr>
           ) : entries.map(e => (
             <tr key={e.id} style={{ opacity: e.is_active ? 1 : 0.5 }}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(e.id)}
+                  onChange={() => toggleOne(e.id)}
+                  aria-label={`选择 ${e.title}`}
+                />
+              </td>
               <td title={e.content}>{e.title}</td>
               <td>{SCENARIO_LABELS[e.scenario] || e.scenario}</td>
               <td>{LAYER_LABELS[e.layer] || e.layer}</td>
