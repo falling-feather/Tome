@@ -172,25 +172,58 @@ class LLMService:
             "top_p": 0.9,
         }
 
-        async with _get_shared_client().stream("POST", url, json=payload, headers=headers, timeout=60.0) as response:
-            if response.status_code != 200:
-                body = await response.aread()
-                raise ValueError(f"LLM API 错误 ({response.status_code}): {body.decode()[:200]}")
+        # 输入字符数 / 估算输入 token (中文 ~1.5 char/token, 英文 ~4 char/token, 取均值 2.5)
+        input_chars = sum(len(m.get("content", "")) for m in messages)
+        input_tokens_est = max(1, input_chars // 3)
+        provider_host = base_url.split("//")[-1].split("/")[0]
 
-            async for line in response.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data_str = line[6:].strip()
-                if data_str == "[DONE]":
-                    break
-                try:
-                    data = json.loads(data_str)
-                    delta = data.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content", "")
-                    if content:
-                        yield content
-                except json.JSONDecodeError:
-                    continue
+        with traced_span(
+            "llm.stream",
+            **{
+                "llm.model": model,
+                "llm.provider": provider_host,
+                "llm.input_chars": input_chars,
+                "llm.input_tokens_est": input_tokens_est,
+            },
+        ) as span:
+            t0 = time.time()
+            output_chars = 0
+            try:
+                async with _get_shared_client().stream(
+                    "POST", url, json=payload, headers=headers, timeout=60.0
+                ) as response:
+                    if response.status_code != 200:
+                        body = await response.aread()
+                        raise ValueError(f"LLM API 错误 ({response.status_code}): {body.decode()[:200]}")
+
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            delta = data.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                output_chars += len(content)
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+            finally:
+                latency_ms = (time.time() - t0) * 1000
+                output_tokens_est = max(0, output_chars // 3)
+                health_metrics.inc("llm_input_chars", input_chars)
+                health_metrics.inc("llm_output_chars", output_chars)
+                health_metrics.inc("llm_tokens_est", input_tokens_est + output_tokens_est)
+                if span is not None:
+                    try:
+                        span.set_attribute("llm.output_chars", output_chars)
+                        span.set_attribute("llm.output_tokens_est", output_tokens_est)
+                        span.set_attribute("llm.latency_ms", round(latency_ms, 1))
+                    except Exception:
+                        pass
 
     async def stream_narrative(
         self, state: dict, history: list[dict], user_action: str, event_context: str = "", session_id: str = ""
@@ -256,7 +289,7 @@ class LLMService:
             providers.append(fb)
 
         last_err = None
-        for api_key, base_url, model in providers:
+        for attempt_idx, (api_key, base_url, model) in enumerate(providers):
             url = f"{base_url.rstrip('/')}/chat/completions"
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {
@@ -265,13 +298,45 @@ class LLMService:
                 "max_tokens": max_tokens,
                 "temperature": 0.7,
             }
-            try:
-                client = _get_shared_client()
-                resp = await client.post(url, json=payload, headers=headers, timeout=30.0)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["choices"][0]["message"]["content"]
-            except Exception as e:
-                last_err = e
-                continue
+            provider_host = base_url.split("//")[-1].split("/")[0]
+            with traced_span(
+                "llm.completion",
+                **{
+                    "llm.model": model,
+                    "llm.provider": provider_host,
+                    "llm.attempt": attempt_idx,
+                    "llm.input_chars": len(prompt),
+                },
+            ) as span:
+                t0 = time.time()
+                try:
+                    client = _get_shared_client()
+                    resp = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    text = data["choices"][0]["message"]["content"]
+                    usage = data.get("usage") or {}
+                    in_tok = int(usage.get("prompt_tokens") or (len(prompt) // 3))
+                    out_tok = int(usage.get("completion_tokens") or (len(text) // 3))
+                    health_metrics.inc("llm_input_chars", len(prompt))
+                    health_metrics.inc("llm_output_chars", len(text))
+                    health_metrics.inc("llm_tokens_est", in_tok + out_tok)
+                    if span is not None:
+                        try:
+                            span.set_attribute("llm.output_chars", len(text))
+                            span.set_attribute("llm.input_tokens", in_tok)
+                            span.set_attribute("llm.output_tokens", out_tok)
+                            span.set_attribute("llm.latency_ms", round((time.time() - t0) * 1000, 1))
+                        except Exception:
+                            pass
+                    return text
+                except Exception as e:
+                    last_err = e
+                    health_metrics.inc("llm_completion_failures")
+                    if span is not None:
+                        try:
+                            span.set_attribute("llm.error", str(e)[:200])
+                        except Exception:
+                            pass
+                    continue
         raise last_err
