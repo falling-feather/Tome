@@ -35,5 +35,18 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # All-in-one Jaeger (OTLP HTTP 4318 / UI 16686)。仅在 otel profile 启用：
+  #   docker compose --profile otel up jaeger
+  # 启动后设置 OTEL_ENABLED=true, OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    profiles: ["otel"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Web UI
+      - "4318:4318"    # OTLP HTTP receiver
+    restart: unless-stopped
+
 volumes:
   postgres_data:

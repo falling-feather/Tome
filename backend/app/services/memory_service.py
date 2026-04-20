@@ -83,33 +83,35 @@ class MemoryService:
         L5 → L4 → L3 → L2
         (L1 由调用方直接从 Message 表获取)
         """
-        parts = []
-        remaining = max_chars
+        from backend.app.tracing import traced_span
+        with traced_span("memory.retrieve_context", session_id=self.session_id, max_chars=max_chars):
+            parts = []
+            remaining = max_chars
 
-        for level in [5, 4, 3, 2]:
-            if remaining <= 100:
-                break
-
-            result = await self.db.execute(
-                select(MemoryEntry).where(and_(
-                    MemoryEntry.session_id == self.session_id,
-                    MemoryEntry.level == level,
-                )).order_by(MemoryEntry.turn_end.desc()).limit(3)
-            )
-            entries = list(reversed(result.scalars().all()))
-
-            for entry in entries:
-                if remaining <= 50:
+            for level in [5, 4, 3, 2]:
+                if remaining <= 100:
                     break
-                text = entry.content[:remaining]
-                label = self._level_label(level)
-                parts.append(f"[{label}] {text}")
-                remaining -= len(text)
 
-        if not parts:
-            return ""
+                result = await self.db.execute(
+                    select(MemoryEntry).where(and_(
+                        MemoryEntry.session_id == self.session_id,
+                        MemoryEntry.level == level,
+                    )).order_by(MemoryEntry.turn_end.desc()).limit(3)
+                )
+                entries = list(reversed(result.scalars().all()))
 
-        return "## 记忆回顾\n" + "\n".join(parts)
+                for entry in entries:
+                    if remaining <= 50:
+                        break
+                    text = entry.content[:remaining]
+                    label = self._level_label(level)
+                    parts.append(f"[{label}] {text}")
+                    remaining -= len(text)
+
+            if not parts:
+                return ""
+
+            return "## 记忆回顾\n" + "\n".join(parts)
 
     # ------------------------------------------------------------------
     # L2 压缩: 近期消息 → 段落摘要
