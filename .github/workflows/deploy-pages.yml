@@ -6,52 +6,43 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install deps
-        run: npm install --no-audit --no-fund
-      - name: Build (with /Tome/ base)
+        run: npm ci --no-audit --no-fund
+
+      - name: Build static site
         env:
-          VITE_BASE: /Tome/
           VITE_API_BASE: ${{ vars.VITE_API_BASE || '/api' }}
-        run: npm run build
+        run: npm run build:pages
+
       - name: SPA fallback + .nojekyll
         run: |
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: frontend/dist
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-      - name: Echo deployed URL
-        run: echo "::notice title=GitHub Pages URL::${{ steps.deployment.outputs.page_url }}"
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: frontend/dist
+          force_orphan: true
