@@ -220,6 +220,12 @@ async def submit_action(
         _start = _time.time()
         full_response = ""
         try:
+            # Phase 1: 同步层完成（验证、配额、消息入库）
+            yield f"data: {json.dumps({'phase': 'validated'}, ensure_ascii=False)}\n\n"
+            # Phase 1.5: 事件触发（叙事前就把命中事件透出，便于前端立即展示提示）
+            if event_log and event_log.get("selected"):
+                yield f"data: {json.dumps({'phase': 'event_triggered', 'event': event_log['selected']}, ensure_ascii=False)}\n\n"
+
             async for chunk in llm.stream_narrative(state, history, data.content, event_narrative, session_id):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
@@ -229,6 +235,8 @@ async def submit_action(
             post_result = processor.process(full_response, state)
             cleaned_text = post_result["cleaned_text"]
             extracted = post_result["extracted"]
+            # Phase 2: 后处理结构化产出
+            yield f"data: {json.dumps({'phase': 'extracted', 'extracted': extracted, 'warnings': post_result.get('warnings', [])}, ensure_ascii=False)}\n\n"
 
             # 多智能体审计
             orchestrator = AgentOrchestrator()
@@ -238,6 +246,8 @@ async def submit_action(
                 # 对重写文本重新提取
                 post_result = processor.process(cleaned_text, state)
                 extracted = post_result["extracted"]
+            # Phase 3: 审计完成
+            yield f"data: {json.dumps({'phase': 'audit', 'audit': {'issues': audit_result.total_issues, 'rewritten': audit_result.was_rewritten}}, ensure_ascii=False)}\n\n"
 
             # Update state with event log
             new_state = engine.update_state(state, data.content, cleaned_text, event_log, events=db_events)

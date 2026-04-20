@@ -56,6 +56,7 @@ function parseSegmentsRealtime(text: string): Segment[] | null {
 export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProps) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamPhase, setStreamPhase] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -82,6 +83,7 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
 
     setInput('');
     setIsStreaming(true);
+    setStreamPhase('提交中…');
 
     const userMsg: Message = { role: 'user', content: text };
     const updatedMessages = [...messages, userMsg];
@@ -95,6 +97,16 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
     try {
       let fullContent = '';
       for await (const data of api.submitAction(sessionId, text)) {
+        if (data.phase === 'validated') {
+          setStreamPhase('叙事生成中…');
+        } else if (data.phase === 'event_triggered') {
+          const evt = data.event || {};
+          setStreamPhase(`事件触发：${evt.title || evt.event_key || '未知'}`);
+        } else if (data.phase === 'extracted') {
+          setStreamPhase('后处理中…');
+        } else if (data.phase === 'audit') {
+          setStreamPhase(data.audit?.rewritten ? '审核改写中…' : '审核完成');
+        }
         if (data.content) {
           fullContent += data.content;
           const updated = [...updatedMessages, { role: 'assistant', content: fullContent }];
@@ -122,6 +134,7 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
       onMessagesUpdate([...updatedMessages, errorMsg]);
     } finally {
       setIsStreaming(false);
+      setStreamPhase('');
     }
   };
 
@@ -233,7 +246,7 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
         {isStreaming && messages[messages.length - 1]?.role === 'assistant' && (
           <div className="chat-typing">
             <div className="typing-dots"><span /><span /><span /></div>
-            正在叙述...
+            {streamPhase || '正在叙述...'}
           </div>
         )}
         <div ref={messagesEndRef} />
