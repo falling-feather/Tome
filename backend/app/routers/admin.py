@@ -6,6 +6,7 @@ from backend.app.models import User, GameSession, Message, ActivityLog, WorldEnt
 from backend.app.services.prompt_assembler import invalidate_template_cache
 from backend.app.schemas import LogList, LogEntry, AdminStats, UserInfo
 from backend.app.auth import require_admin
+from backend.app.config import settings
 from backend.app.services.resilience import (
     llm_circuit_breaker, llm_fallback_circuit_breaker,
     game_rate_limiter, health_metrics, daily_quota,
@@ -490,6 +491,12 @@ async def get_health(admin: User = Depends(require_admin), db: AsyncSession = De
         cost_alerts = await get_cost_alerts(db)
     except Exception:
         cost_alerts = None
+    if cost_alerts:
+        try:
+            from backend.app.services.cost_alerts import maybe_send_alerts
+            await maybe_send_alerts(cost_alerts)
+        except Exception:
+            pass
     return {
         "circuit_breakers": {
             "llm_primary": llm_circuit_breaker.get_stats(),
@@ -501,6 +508,28 @@ async def get_health(admin: User = Depends(require_admin), db: AsyncSession = De
         "llm_cost": compute_cost_report(),
         "cost_alerts": cost_alerts,
     }
+
+
+@router.post("/test-cost-webhook")
+async def test_cost_webhook(admin: User = Depends(require_admin)):
+    """手动 ping 一次 LLM_ALERT_WEBHOOK_URL 验证连通性。
+
+    返回: {"configured": bool, "ok": bool, "url": str}
+    """
+    import datetime as _dt
+    from backend.app.services.cost_alerts import _post
+
+    url = settings.LLM_ALERT_WEBHOOK_URL
+    if not url:
+        return {"configured": False, "ok": False, "url": ""}
+    payload = {
+        "type": "cost_alert_test",
+        "key": "manual",
+        "level": "test",
+        "ts": _dt.datetime.utcnow().isoformat() + "Z",
+    }
+    ok = await _post(url, payload)
+    return {"configured": True, "ok": ok, "url": url}
 
 
 @router.get("/llm-trend")
