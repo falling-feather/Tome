@@ -32,8 +32,10 @@ jobs:
           VITE_BASE: /Tome/
           VITE_API_BASE: ${{ vars.VITE_API_BASE || '/api' }}
         run: npm run build
-      - name: SPA fallback
-        run: cp dist/index.html dist/404.html
+      - name: SPA fallback + .nojekyll
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
@@ -47,3 +49,5 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Echo deployed URL
+        run: echo "::notice title=GitHub Pages URL::${{ steps.deployment.outputs.page_url }}"
