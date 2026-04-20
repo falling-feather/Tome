@@ -1,6 +1,10 @@
 // 运行时可通过 VITE_API_BASE 覆盖；部署到静态 Pages 时需设为后端绝对路径。
 import i18n from './../i18n';
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api';
+const EXPLICIT_API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
+const API_BASE = EXPLICIT_API_BASE || '/api';
+const IS_STATIC_GITHUB_PAGES = typeof window !== 'undefined'
+  && window.location.hostname.endsWith('github.io')
+  && !EXPLICIT_API_BASE;
 
 function getToken(): string | null {
   return localStorage.getItem('token');
@@ -18,10 +22,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string> || {}),
   };
 
+  if (IS_STATIC_GITHUB_PAGES) {
+    throw new Error(i18n.t('common.backendNotConfigured'));
+  }
+
   const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({ detail: resp.statusText }));
+    if ((resp.status === 404 || resp.status === 405) && IS_STATIC_GITHUB_PAGES) {
+      throw new Error(i18n.t('common.backendNotConfigured'));
+    }
     throw new Error(body.detail || i18n.t('common.requestFailed', { status: resp.status }));
   }
 

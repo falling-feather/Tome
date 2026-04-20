@@ -66,6 +66,7 @@ const resources = {
         retry: '重试',
         loadFailed: '加载失败',
         requestFailed: '请求失败 ({{status}})',
+        backendNotConfigured: '当前 GitHub Pages 只部署了静态前端，尚未配置后端 API，所以登录/注册暂时不可用。',
       },
       statusPanel: {
         exploring: '探索中',
@@ -258,6 +259,7 @@ const resources = {
         retry: 'Retry',
         loadFailed: 'Load failed',
         requestFailed: 'Request failed ({{status}})',
+        backendNotConfigured: 'This GitHub Pages site only hosts the static frontend. A backend API has not been configured yet, so login and registration are currently unavailable.',
       },
       statusPanel: {
         exploring: 'Exploring',
