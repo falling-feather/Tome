@@ -1,25 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Sidebar } from '../components/Sidebar';
 import { GameChat } from '../components/GameChat';
 import { StatusPanel } from '../components/StatusPanel';
 import { api } from '../api/client';
 import '../styles/game.css';
 
-const SCENARIOS = [
-  { value: 'fantasy', label: '幽暗大陆 · 奇幻冒险' },
-  { value: 'scifi', label: '星际纪元 · 科幻探索' },
-  { value: 'wuxia', label: '江湖风云 · 武侠传奇' },
+const SCENARIO_VALUES = [
+  { value: 'fantasy', key: 'gameSetup.scenarioFantasy' },
+  { value: 'scifi', key: 'gameSetup.scenarioScifi' },
+  { value: 'wuxia', key: 'gameSetup.scenarioWuxia' },
 ];
 
-const CLASSES = [
-  { value: '战士', label: '战士' },
-  { value: '法师', label: '法师' },
-  { value: '盗贼', label: '盗贼' },
-  { value: '游侠', label: '游侠' },
-  { value: '吟游诗人', label: '吟游诗人' },
-];
+// 注意：职业 value 是提交给后端的标识符，保持中文字面量（见 docs/05 数据约定）。
+// i18n-ignore
+const CLASS_VALUES = ['战士', '法师', '盗贼', '游侠', '吟游诗人']; // i18n-ignore
 
 export function GamePage() {
+  const { t } = useTranslation();
   const [sessions, setSessions] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -214,8 +212,8 @@ export function GamePage() {
                   }
                 }}
               >
-                {SCENARIOS.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
+                {SCENARIO_VALUES.map((s) => (
+                  <option key={s.value} value={s.value}>{t(s.key)}</option>
                 ))}
                 {customStories.length > 0 && (
                   <option value="custom">自编故事</option>
@@ -249,8 +247,8 @@ export function GamePage() {
                 value={newGame.character_class}
                 onChange={(e) => setNewGame({ ...newGame, character_class: e.target.value })}
               >
-                {CLASSES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
+                {CLASS_VALUES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>

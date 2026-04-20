@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  exploring: { label: '探索中', color: 'var(--accent)' },
-  combat: { label: '战斗中', color: 'var(--error)' },
-  resting: { label: '休息中', color: 'var(--success)' },
-  trading: { label: '交易中', color: 'var(--warning)' },
-  dialogue: { label: '对话中', color: '#8b5cf6' },
-  dead: { label: '已死亡', color: 'var(--text-muted)' },
+const STATUS_META: Record<string, { key: string; color: string }> = {
+  exploring: { key: 'exploring', color: 'var(--accent)' },
+  combat: { key: 'combat', color: 'var(--error)' },
+  resting: { key: 'resting', color: 'var(--success)' },
+  trading: { key: 'trading', color: 'var(--warning)' },
+  dialogue: { key: 'dialogue', color: '#8b5cf6' },
+  dead: { key: 'dead', color: 'var(--text-muted)' },
 };
 
 type TabKey = 'status' | 'resource' | 'progress';
@@ -16,6 +17,7 @@ interface StatusPanelProps {
 }
 
 export function StatusPanel({ state }: StatusPanelProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>('status');
 
   if (!state || !state.character_name) return null;
@@ -25,15 +27,15 @@ export function StatusPanel({ state }: StatusPanelProps) {
   const hpPercent = Math.round((hp / maxHp) * 100);
   const fatigue = state.fatigue || 0;
   const status = state.status || 'exploring';
-  const statusInfo = STATUS_LABELS[status] || STATUS_LABELS.exploring;
+  const statusInfo = STATUS_META[status] || STATUS_META.exploring;
   const inventory: string[] = state.inventory || [];
   const questFlags: Record<string, boolean> = state.quest_flags || {};
   const questCount = Object.keys(questFlags).length;
 
   const tabs: { key: TabKey; label: string; badge?: string | number }[] = [
-    { key: 'status', label: '状态' },
-    { key: 'resource', label: '资源', badge: inventory.length || undefined },
-    { key: 'progress', label: '进度', badge: questCount || undefined },
+    { key: 'status', label: t('statusPanel.tabStatus') },
+    { key: 'resource', label: t('statusPanel.tabResource'), badge: inventory.length || undefined },
+    { key: 'progress', label: t('statusPanel.tabProgress'), badge: questCount || undefined },
   ];
 
   return (
@@ -49,7 +51,7 @@ export function StatusPanel({ state }: StatusPanelProps) {
           className="status-badge"
           style={{ borderColor: statusInfo.color, color: statusInfo.color }}
         >
-          {statusInfo.label}
+          {t(`statusPanel.${statusInfo.key}`)}
         </span>
       </div>
 

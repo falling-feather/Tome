@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 
-const SCENARIO_LABELS: Record<string, string> = {
-  '*': '通用', fantasy: '奇幻', scifi: '科幻', wuxia: '武侠',
+const SCENARIO_KEYS: Record<string, string> = {
+  '*': 'worldBook.scenarioAll', fantasy: 'worldBook.scenarioFantasy',
+  scifi: 'worldBook.scenarioScifi', wuxia: 'worldBook.scenarioWuxia',
 };
-const LAYER_LABELS: Record<string, string> = {
-  core: '核心', chapter: '章节', ephemeral: '临时',
+const LAYER_KEYS: Record<string, string> = {
+  core: 'worldBook.layerCore', chapter: 'worldBook.layerChapter', ephemeral: 'worldBook.layerEphemeral',
 };
 const CATEGORY_OPTIONS = ['lore', 'character', 'location', 'faction', 'item', 'rule'];
 
@@ -16,6 +18,7 @@ interface WorldEntry {
 }
 
 export function AdminWorldBook() {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<WorldEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -150,14 +153,14 @@ export function AdminWorldBook() {
       <div className="admin-filters">
         <select value={filterScenario} onChange={e => { setFilterScenario(e.target.value); setPage(1); }}>
           <option value="">全部场景</option>
-          {Object.entries(SCENARIO_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
+          {Object.entries(SCENARIO_KEYS).map(([k, v]) => (
+            <option key={k} value={k}>{t(v)}</option>
           ))}
         </select>
         <select value={filterLayer} onChange={e => { setFilterLayer(e.target.value); setPage(1); }}>
           <option value="">全部层级</option>
-          {Object.entries(LAYER_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
+          {Object.entries(LAYER_KEYS).map(([k, v]) => (
+            <option key={k} value={k}>{t(v)}</option>
           ))}
         </select>
         <span className="admin-count">共 {total} 条</span>
@@ -181,12 +184,12 @@ export function AdminWorldBook() {
             </label>
             <label>场景
               <select value={form.scenario} onChange={e => setForm({ ...form, scenario: e.target.value })}>
-                {Object.entries(SCENARIO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {Object.entries(SCENARIO_KEYS).map(([k, v]) => <option key={k} value={k}>{t(v)}</option>)}
               </select>
             </label>
             <label>层级
               <select value={form.layer} onChange={e => setForm({ ...form, layer: e.target.value })}>
-                {Object.entries(LAYER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {Object.entries(LAYER_KEYS).map(([k, v]) => <option key={k} value={k}>{t(v)}</option>)}
               </select>
             </label>
             <label>分类
@@ -254,8 +257,8 @@ export function AdminWorldBook() {
                 />
               </td>
               <td title={e.content}>{e.title}</td>
-              <td>{SCENARIO_LABELS[e.scenario] || e.scenario}</td>
-              <td>{LAYER_LABELS[e.layer] || e.layer}</td>
+              <td>{SCENARIO_KEYS[e.scenario] ? t(SCENARIO_KEYS[e.scenario]) : e.scenario}</td>
+              <td>{LAYER_KEYS[e.layer] ? t(LAYER_KEYS[e.layer]) : e.layer}</td>
               <td>{e.category}</td>
               <td>{e.priority}</td>
               <td>{e.chapter_min || '-'} ~ {e.chapter_max || '-'}</td>

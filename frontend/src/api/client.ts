@@ -1,4 +1,5 @@
 // 运行时可通过 VITE_API_BASE 覆盖；部署到静态 Pages 时需设为后端绝对路径。
+import i18n from './../i18n';
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api';
 
 function getToken(): string | null {
@@ -21,7 +22,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({ detail: resp.statusText }));
-    throw new Error(body.detail || `请求失败 (${resp.status})`);
+    throw new Error(body.detail || i18n.t('common.requestFailed', { status: resp.status }));
   }
 
   return resp.json();
