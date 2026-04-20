@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from backend.app.database import get_db
-from backend.app.models import User, UserApiKey, ActivityLog
+from backend.app.models import User, UserApiKey
 from backend.app.schemas import ApiKeyConfig, ApiKeyList
-from backend.app.auth import get_current_user, get_client_ip
+from backend.app.auth import get_current_user
+from backend.app.audit import audit_log
 from backend.app.config import settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -72,13 +73,9 @@ async def update_api_key(
         )
         db.add(key)
 
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="update_apikey",
-        detail=f"更新 {data.provider} API配置", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
     await db.commit()
+    await audit_log(db, user=user, action="update_apikey",
+                    detail=f"更新 {data.provider} API配置", request=request)
 
     return {"status": "ok", "provider": data.provider}
 
@@ -91,13 +88,9 @@ async def delete_api_key(
     await db.execute(
         delete(UserApiKey).where(UserApiKey.user_id == user.id, UserApiKey.provider == provider)
     )
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="delete_apikey",
-        detail=f"删除 {provider} 自定义API配置", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
     await db.commit()
+    await audit_log(db, user=user, action="delete_apikey",
+                    detail=f"删除 {provider} 自定义API配置", request=request)
     return {"status": "ok"}
 
 

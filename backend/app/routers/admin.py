@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from backend.app.database import get_db
-from backend.app.models import User, GameSession, Message, ActivityLog, WorldEntry, PromptTemplate
+from backend.app.models import User, GameSession, Message, ActivityLog, WorldEntry, PromptTemplate, GameEvent
+from backend.app.services.prompt_assembler import invalidate_template_cache
 from backend.app.schemas import LogList, LogEntry, AdminStats, UserInfo
 from backend.app.auth import require_admin
 from backend.app.services.resilience import (
     llm_circuit_breaker, llm_fallback_circuit_breaker,
-    game_rate_limiter, health_metrics,
+    game_rate_limiter, health_metrics, daily_quota,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -186,6 +187,104 @@ async def delete_world_entry(
 
 
 # ---------------------------------------------------------------------------
+# 游戏事件池管理
+# ---------------------------------------------------------------------------
+@router.get("/game-events")
+async def list_game_events(
+    category: str = Query("", description="事件分类过滤"),
+    scenario: str = Query("", description="场景过滤"),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(GameEvent).order_by(GameEvent.category, GameEvent.id)
+    if category:
+        query = query.where(GameEvent.category == category)
+
+    result = await db.execute(query)
+    events = result.scalars().all()
+    if scenario:
+        events = [e for e in events if not e.scenarios or scenario in e.scenarios]
+
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "event_key": e.event_key,
+                "category": e.category,
+                "title": e.title,
+                "description": e.description,
+                "conditions": e.conditions,
+                "base_weight": e.base_weight,
+                "cooldown_turns": e.cooldown_turns,
+                "effects": e.effects,
+                "scenarios": e.scenarios or [],
+            }
+            for e in events
+        ]
+    }
+
+
+@router.post("/game-events")
+async def create_game_event(
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    event = GameEvent(
+        event_key=data.get("event_key", ""),
+        category=data.get("category", "plot"),
+        title=data.get("title", ""),
+        description=data.get("description", ""),
+        conditions=data.get("conditions", {}),
+        base_weight=data.get("base_weight", 1.0),
+        cooldown_turns=data.get("cooldown_turns", 3),
+        effects=data.get("effects", {}),
+        scenarios=data.get("scenarios", []),
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return {"id": event.id, "event_key": event.event_key}
+
+
+@router.put("/game-events/{event_id}")
+async def update_game_event(
+    event_id: int,
+    data: dict = Body(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(GameEvent).where(GameEvent.id == event_id))
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="事件不存在")
+
+    for field in [
+        "event_key", "category", "title", "description", "conditions",
+        "base_weight", "cooldown_turns", "effects", "scenarios",
+    ]:
+        if field in data:
+            setattr(event, field, data[field])
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/game-events/{event_id}")
+async def delete_game_event(
+    event_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(GameEvent).where(GameEvent.id == event_id))
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="事件不存在")
+    await db.delete(event)
+    await db.commit()
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # Prompt 模板管理
 # ---------------------------------------------------------------------------
 @router.get("/prompt-templates")
@@ -233,6 +332,7 @@ async def update_prompt_template(
         )
         db.add(new_tpl)
     await db.commit()
+    invalidate_template_cache()
     return {"status": "ok"}
 
 
@@ -248,5 +348,6 @@ async def get_health(admin: User = Depends(require_admin)):
             "llm_fallback": llm_fallback_circuit_breaker.get_stats(),
         },
         "rate_limiter": game_rate_limiter.get_stats(),
+        "daily_quota": daily_quota.get_stats(),
         "metrics": health_metrics.get_report(),
     }

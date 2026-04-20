@@ -9,18 +9,19 @@ import time as _time
 from urllib.parse import quote
 
 from backend.app.database import get_db
-from backend.app.models import User, GameSession, Message, ActivityLog, CustomStory
+from backend.app.models import User, GameSession, Message, CustomStory
 from backend.app.schemas import (
     SessionCreate, SessionInfo, SessionList, ActionInput, MessageOut, ChatHistory,
     SessionRename
 )
-from backend.app.auth import get_current_user, get_client_ip
-from backend.app.services.game_engine import GameEngine, SCENARIOS
+from backend.app.auth import get_current_user
+from backend.app.audit import audit_log
+from backend.app.services.game_engine import GameEngine, SCENARIOS, load_events_from_db
 from backend.app.services.llm_service import LLMService
 from backend.app.services.post_processor import ResponsePostProcessor
 from backend.app.services.memory_service import MemoryService
 from backend.app.services.agents import AgentOrchestrator
-from backend.app.services.resilience import game_rate_limiter, health_metrics
+from backend.app.services.resilience import game_rate_limiter, health_metrics, daily_quota
 
 logger = logging.getLogger("inkless")
 
@@ -74,14 +75,10 @@ async def create_session(
     intro = custom_intro or engine.generate_intro(initial_state)
     msg = Message(session_id=session.id, role="assistant", content=intro)
     db.add(msg)
-
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="create_session",
-        detail=f"创建游戏会话: {data.title}", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
     await db.commit()
+
+    await audit_log(db, user=user, action="create_session",
+                    detail=f"创建游戏会话: {data.title}", request=request)
 
     return SessionInfo(
         id=session.id, title=session.title, scenario=session.scenario,
@@ -138,13 +135,9 @@ async def delete_session(
         raise HTTPException(status_code=404, detail="会话不存在")
 
     await db.delete(session)
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="delete_session",
-        detail=f"删除游戏会话: {session.title}", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
     await db.commit()
+    await audit_log(db, user=user, action="delete_session",
+                    detail=f"删除游戏会话: {session.title}", request=request)
     return {"status": "ok"}
 
 
@@ -176,6 +169,11 @@ async def submit_action(
     if not allowed:
         raise HTTPException(status_code=429, detail=rate_msg)
 
+    # 每日配额检查
+    allowed, quota_msg = daily_quota.check(user.id)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=quota_msg)
+
     health_metrics.inc("game_actions")
 
     result = await db.execute(
@@ -200,6 +198,7 @@ async def submit_action(
     user_msg = Message(session_id=session_id, role="user", content=data.content)
     db.add(user_msg)
     await db.commit()
+    daily_quota.record(user.id)
 
     # Get recent messages for context
     msg_result = await db.execute(
@@ -208,7 +207,8 @@ async def submit_action(
     recent_messages = list(reversed(msg_result.scalars().all()))
 
     # Check for event triggers (returns narrative + log)
-    event_narrative, event_log = engine.check_events(state)
+    db_events = await load_events_from_db(db)
+    event_narrative, event_log = engine.check_events(state, events=db_events)
 
     # Build prompt context
     history = [{"role": m.role, "content": m.content} for m in recent_messages]
@@ -240,7 +240,7 @@ async def submit_action(
                 extracted = post_result["extracted"]
 
             # Update state with event log
-            new_state = engine.update_state(state, data.content, cleaned_text, event_log)
+            new_state = engine.update_state(state, data.content, cleaned_text, event_log, events=db_events)
 
             # Apply extracted info to state
             if extracted["items_gained"]:
@@ -309,13 +309,8 @@ async def submit_action(
             await db.commit()
             yield f"data: {json.dumps({'content': fallback, 'done': True, 'error': True}, ensure_ascii=False)}\n\n"
 
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="game_action",
-        detail=f"会话 {session_id}: {data.content[:100]}", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
-    await db.commit()
+    await audit_log(db, user=user, action="game_action",
+                    detail=f"会话 {session_id}: {data.content[:100]}", request=request)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

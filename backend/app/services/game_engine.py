@@ -177,6 +177,63 @@ SCENARIOS = {
     },
 }
 
+
+# ---------------------------------------------------------------------------
+# 事件池 DB 辅助
+# ---------------------------------------------------------------------------
+async def seed_events_if_empty(db) -> int:
+    """Seed game_events table from EVENTS constant if the table is empty.
+    Returns number of rows inserted."""
+    from sqlalchemy import select, func
+    from backend.app.models import GameEvent
+
+    count = (await db.execute(select(func.count()).select_from(GameEvent))).scalar() or 0
+    if count > 0:
+        return 0
+
+    for evt in EVENTS:
+        row = GameEvent(
+            event_key=evt["key"],
+            category=evt["category"],
+            title=evt["title"],
+            description=evt["description"],
+            conditions=evt.get("conditions", {}),
+            base_weight=evt.get("weight", 1.0),
+            cooldown_turns=evt.get("cooldown", 3),
+            effects=evt.get("effects", {}),
+            scenarios=evt.get("scenarios", []),
+        )
+        db.add(row)
+    await db.commit()
+    logger.info(f"Seeded {len(EVENTS)} events into game_events table")
+    return len(EVENTS)
+
+
+async def load_events_from_db(db) -> list[dict]:
+    """Load all events from DB, converting to the dict format expected by check_events."""
+    from sqlalchemy import select
+    from backend.app.models import GameEvent
+
+    rows = (await db.execute(select(GameEvent))).scalars().all()
+    if not rows:
+        return EVENTS  # fallback to constant
+
+    return [
+        {
+            "key": r.event_key,
+            "category": r.category,
+            "title": r.title,
+            "description": r.description,
+            "conditions": r.conditions or {},
+            "weight": r.base_weight or 1.0,
+            "cooldown": r.cooldown_turns or 3,
+            "effects": r.effects or {},
+            "scenarios": r.scenarios or [],
+        }
+        for r in rows
+    ]
+
+
 # 动作关键词 → 状态映射
 ACTION_STATUS_MAP = {
     STATUS_COMBAT: ["攻击", "战斗", "打", "杀", "砍", "射", "拔剑", "出招", "fight", "attack"],
@@ -270,7 +327,7 @@ class GameEngine:
     # ------------------------------------------------------------------
     # 事件检查 (完整条件系统 + 日志)
     # ------------------------------------------------------------------
-    def check_events(self, state: dict) -> tuple[str, dict]:
+    def check_events(self, state: dict, events: list[dict] | None = None) -> tuple[str, dict]:
         """Return (event_narrative, event_log). event_log includes candidates, selected, and skip reasons."""
         turn = state.get("turn", 0)
         cooldowns = state.get("event_cooldowns", {})
@@ -286,7 +343,7 @@ class GameEngine:
         candidates = []
         skip_log = []
 
-        for event in EVENTS:
+        for event in (events or EVENTS):
             # 场景过滤
             evt_scenarios = event.get("scenarios", [])
             if evt_scenarios and scenario not in evt_scenarios:
@@ -362,7 +419,7 @@ class GameEngine:
     # ------------------------------------------------------------------
     # 结算器：统一状态更新
     # ------------------------------------------------------------------
-    def update_state(self, state: dict, user_action: str, ai_response: str, event_log: dict | None = None) -> dict:
+    def update_state(self, state: dict, user_action: str, ai_response: str, event_log: dict | None = None, events: list[dict] | None = None) -> dict:
         state = dict(state)
         state["turn"] = state.get("turn", 0) + 1
         current_status = state.get("status", STATUS_EXPLORING)
@@ -378,7 +435,7 @@ class GameEngine:
         # 2. 应用事件效果
         if event_log and event_log.get("selected") and event_log["selected"].get("triggered"):
             evt_key = event_log["selected"]["key"]
-            event_def = next((e for e in EVENTS if e["key"] == evt_key), None)
+            event_def = next((e for e in (events or EVENTS) if e["key"] == evt_key), None)
             if event_def:
                 state["event_cooldowns"][evt_key] = event_def["cooldown"]
                 triggered = list(state.get("events_triggered", []))

@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
+import re
 
 
 # ---- Auth ----
@@ -57,6 +58,17 @@ class SessionList(BaseModel):
 # ---- Messages ----
 class ActionInput(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("content")
+    @classmethod
+    def sanitize_content(cls, v: str) -> str:
+        # Strip leading/trailing whitespace
+        v = v.strip()
+        # Collapse excessive whitespace / newlines
+        v = re.sub(r"\s{5,}", "    ", v)
+        if not v:
+            raise ValueError("内容不能为空")
+        return v
 
 
 class MessageOut(BaseModel):

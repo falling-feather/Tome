@@ -16,6 +16,21 @@ from backend.app.services.resilience import (
     llm_circuit_breaker, llm_fallback_circuit_breaker, health_metrics,
 )
 
+# ---------------------------------------------------------------------------
+# 模块级共享 httpx.AsyncClient（连接复用）
+# ---------------------------------------------------------------------------
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        )
+    return _shared_client
+
 
 class LLMService:
     def __init__(self, user_id: int = 0, db: Optional[AsyncSession] = None):
@@ -156,26 +171,25 @@ class LLMService:
             "top_p": 0.9,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream("POST", url, json=payload, headers=headers) as response:
-                if response.status_code != 200:
-                    body = await response.aread()
-                    raise ValueError(f"LLM API 错误 ({response.status_code}): {body.decode()[:200]}")
+        async with _get_shared_client().stream("POST", url, json=payload, headers=headers, timeout=60.0) as response:
+            if response.status_code != 200:
+                body = await response.aread()
+                raise ValueError(f"LLM API 错误 ({response.status_code}): {body.decode()[:200]}")
 
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                        delta = data.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                    except json.JSONDecodeError:
-                        continue
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    data = json.loads(data_str)
+                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
+                except json.JSONDecodeError:
+                    continue
 
     async def stream_narrative(
         self, state: dict, history: list[dict], user_action: str, event_context: str = "", session_id: str = ""
@@ -245,11 +259,11 @@ class LLMService:
                 "temperature": 0.7,
             }
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post(url, json=payload, headers=headers)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    return data["choices"][0]["message"]["content"]
+                client = _get_shared_client()
+                resp = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
             except Exception as e:
                 last_err = e
                 continue

@@ -278,6 +278,45 @@ class HealthMetrics:
 
 
 # ---------------------------------------------------------------------------
+# 每日配额
+# ---------------------------------------------------------------------------
+class DailyQuota:
+    """按用户 ID 统计每日动作次数，跨天自动重置。"""
+
+    def __init__(self, limit: int = 200):
+        self.limit = limit
+        self._counts: dict[int, int] = {}
+        self._date: str = ""  # YYYY-MM-DD
+
+    def _maybe_reset(self):
+        import datetime as _dt
+        today = _dt.date.today().isoformat()
+        if today != self._date:
+            self._counts.clear()
+            self._date = today
+
+    def check(self, user_id: int) -> tuple[bool, str]:
+        if self.limit <= 0:
+            return True, ""
+        self._maybe_reset()
+        used = self._counts.get(user_id, 0)
+        if used >= self.limit:
+            return False, f"今日操作已达上限（{self.limit}次），请明日再来"
+        return True, ""
+
+    def record(self, user_id: int):
+        self._maybe_reset()
+        self._counts[user_id] = self._counts.get(user_id, 0) + 1
+
+    def get_stats(self) -> dict:
+        self._maybe_reset()
+        return {
+            "limit": self.limit,
+            "active_users": len(self._counts),
+        }
+
+
+# ---------------------------------------------------------------------------
 # 全局单例
 # ---------------------------------------------------------------------------
 # LLM 调用断路器
@@ -306,3 +345,13 @@ game_rate_limiter = RateLimiter(
 
 # 健康指标
 health_metrics = HealthMetrics()
+
+# 每日配额 (启动时从 config 读取)
+def _init_daily_quota() -> DailyQuota:
+    try:
+        from backend.app.config import settings
+        return DailyQuota(limit=settings.DAILY_ACTION_LIMIT)
+    except Exception:
+        return DailyQuota(limit=200)
+
+daily_quota = _init_daily_quota()

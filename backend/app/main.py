@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from backend.app.config import settings
+from backend.app.logging_config import setup_logging
 from backend.app.database import init_db, async_session
 from backend.app.models import User
 from backend.app.auth import hash_password
@@ -17,10 +18,7 @@ from backend.app.routers import auth, game, admin
 from backend.app.routers import settings as settings_router
 from backend.app.routers import stories as stories_router
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.DEBUG else logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging()
 logger = logging.getLogger("inkless")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -51,12 +49,21 @@ async def seed_world_data():
         await pa.seed_if_empty()
 
 
+async def seed_game_events():
+    """种子事件池（仅在空表时从内置常量初始化）"""
+    from backend.app.services.game_engine import seed_events_if_empty
+
+    async with async_session() as db:
+        await seed_events_if_empty(db)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("正在初始化数据库...")
     await init_db()
     await seed_admin()
     await seed_world_data()
+    await seed_game_events()
     logger.info("不存在之书 (Inkless) 服务启动完成")
     yield
     logger.info("不存在之书 (Inkless) 服务关闭")
@@ -64,14 +71,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="不存在之书 — Inkless",
-    version="0.1.0",
+    version=settings.APP_VERSION,
     lifespan=lifespan,
 )
 
+_cors_origins = (
+    [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+    if settings.CORS_ORIGINS != "*"
+    else ["*"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=settings.CORS_ORIGINS != "*",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -87,12 +99,9 @@ app.include_router(stories_router.router)
 
 @app.get("/api/health")
 async def health():
-    from backend.app.services.resilience import llm_circuit_breaker, health_metrics
     return {
         "status": "ok",
-        "version": "0.1.0",
-        "llm_circuit": llm_circuit_breaker.state,
-        "uptime": health_metrics.get_report().get("uptime_seconds", 0),
+        "version": settings.APP_VERSION,
     }
 
 

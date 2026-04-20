@@ -1,4 +1,5 @@
-const API_BASE = '/api';
+// 运行时可通过 VITE_API_BASE 覆盖；部署到静态 Pages 时需设为后端绝对路径。
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api';
 
 function getToken(): string | null {
   return localStorage.getItem('token');

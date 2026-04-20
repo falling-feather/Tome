@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Awaitable
 
+from backend.app.config import settings
+
 logger = logging.getLogger("inkless")
 
 
@@ -316,9 +318,11 @@ class AgentOrchestrator:
             # 审计代理有自动修正
             final_text = audit_verdict.rewrite
 
-        # 4. 如果问题 >= 5 且有 LLM，尝试重写
+        # 4. 如果问题 >= 阈值且有 LLM，尝试重写
+        rewrite_threshold = settings.AUDIT_REWRITE_THRESHOLD
+        fallback_threshold = int(rewrite_threshold * 1.6)
         was_rewritten = False
-        if total_issues >= 5 and llm_complete:
+        if total_issues >= rewrite_threshold and llm_complete:
             try:
                 rewrite_prompt = self._build_rewrite_prompt(text, verdicts, state)
                 rewritten = await llm_complete(rewrite_prompt, 512)
@@ -330,7 +334,7 @@ class AgentOrchestrator:
                 logger.warning(f"LLM重写失败: {e}")
 
         # 5. 如果重写也失败且严重问题过多，使用降级模板
-        if total_issues >= 8 and not was_rewritten:
+        if total_issues >= fallback_threshold and not was_rewritten:
             status = state.get("status", "exploring")
             location = state.get("current_location", "未知之地")
             template = self.FALLBACK_TEMPLATES.get(status, self.FALLBACK_TEMPLATES["exploring"])

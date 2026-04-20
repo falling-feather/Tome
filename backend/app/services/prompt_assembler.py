@@ -2,6 +2,7 @@
 Prompt 装配器 — 分层模板管理 + 动静分离装配
 """
 import logging
+import time
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -9,6 +10,34 @@ from sqlalchemy import select, and_
 from backend.app.models import PromptTemplate
 
 logger = logging.getLogger("inkless")
+
+# ---------------------------------------------------------------------------
+# 模板缓存 (进程内, TTL 5分钟)
+# ---------------------------------------------------------------------------
+_template_cache: dict[tuple[str, str], tuple[float, str | None]] = {}
+_CACHE_TTL = 300  # seconds
+
+
+def _cache_get(name: str, scenario: str) -> str | None | type[...]:
+    """返回缓存值, 或 Ellipsis 表示未命中/过期。"""
+    key = (name, scenario)
+    entry = _template_cache.get(key)
+    if entry is None:
+        return ...
+    ts, value = entry
+    if time.monotonic() - ts > _CACHE_TTL:
+        del _template_cache[key]
+        return ...
+    return value
+
+
+def _cache_set(name: str, scenario: str, value: str | None) -> None:
+    _template_cache[(name, scenario)] = (time.monotonic(), value)
+
+
+def invalidate_template_cache() -> None:
+    """清空模板缓存 — 在模板写操作后调用。"""
+    _template_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -175,9 +204,15 @@ class PromptAssembler:
     # 模板获取
     # ------------------------------------------------------------------
     async def get_template(self, name: str, scenario: str = "*") -> str | None:
-        """获取指定名称和场景的活跃模板"""
+        """获取指定名称和场景的活跃模板（带进程内 LRU 缓存）"""
         # 先找场景专用，再找通用
         for sc in [scenario, "*"]:
+            cached = _cache_get(name, sc)
+            if cached is not ...:
+                if cached is not None:
+                    return cached
+                continue  # cached None means this (name, sc) pair was looked up and not found
+
             result = await self.db.execute(
                 select(PromptTemplate).where(and_(
                     PromptTemplate.name == name,
@@ -186,8 +221,10 @@ class PromptAssembler:
                 )).order_by(PromptTemplate.version.desc()).limit(1)
             )
             tpl = result.scalar_one_or_none()
-            if tpl:
-                return tpl.content
+            content = tpl.content if tpl else None
+            _cache_set(name, sc, content)
+            if content is not None:
+                return content
         return None
 
     # ------------------------------------------------------------------

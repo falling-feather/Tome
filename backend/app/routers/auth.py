@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.app.database import get_db
-from backend.app.models import User, ActivityLog
+from backend.app.models import User
 from backend.app.schemas import UserRegister, UserLogin, TokenResponse, UserInfo
-from backend.app.auth import hash_password, verify_password, create_access_token, get_current_user, get_client_ip
+from backend.app.auth import hash_password, verify_password, create_access_token, get_current_user
+from backend.app.audit import audit_log
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -24,13 +25,7 @@ async def register(data: UserRegister, request: Request, db: AsyncSession = Depe
     await db.commit()
     await db.refresh(user)
 
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="register",
-        detail=f"注册账号", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
-    await db.commit()
+    await audit_log(db, user=user, action="register", detail="注册账号", request=request)
 
     token = create_access_token({"sub": user.username})
     return TokenResponse(access_token=token, username=user.username, is_admin=user.is_admin)
@@ -41,22 +36,13 @@ async def login(data: UserLogin, request: Request, db: AsyncSession = Depends(ge
     result = await db.execute(select(User).where(User.username == data.username))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
-        log = ActivityLog(
-            user_id=None, username=data.username, action="login_failed",
-            detail="登录失败：密码错误或用户不存在", ip_address=get_client_ip(request),
-            user_agent=request.headers.get("User-Agent", "")[:512],
+        await audit_log(
+            db, username=data.username, action="login_failed",
+            detail="登录失败：密码错误或用户不存在", request=request,
         )
-        db.add(log)
-        await db.commit()
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    log = ActivityLog(
-        user_id=user.id, username=user.username, action="login",
-        detail="登录成功", ip_address=get_client_ip(request),
-        user_agent=request.headers.get("User-Agent", "")[:512],
-    )
-    db.add(log)
-    await db.commit()
+    await audit_log(db, user=user, action="login", detail="登录成功", request=request)
 
     token = create_access_token({"sub": user.username})
     return TokenResponse(access_token=token, username=user.username, is_admin=user.is_admin)

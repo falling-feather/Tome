@@ -95,6 +95,7 @@ class GameEvent(Base):
     base_weight = Column(Float, default=1.0)
     cooldown_turns = Column(Integer, default=3)
     effects = Column(JSON, default=dict)
+    scenarios = Column(JSON, default=list)  # [] = all scenarios
 
 
 class WorldEntry(Base):
