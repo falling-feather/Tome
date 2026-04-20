@@ -118,6 +118,8 @@ cd D:\apps\writegame
 
 ## 5. 一次性部署
 
+### 方案 A：分两步执行
+
 在项目根目录执行：
 
 ```powershell
@@ -134,6 +136,27 @@ cd D:\apps\writegame
 - 初始化 .env 文件
 
 如果脚本执行完没有报错，说明基础环境已经装好了。
+
+### 方案 B：一键部署并直接启动
+
+如果你更希望“一条命令搞定部署并运行”，可以直接执行：
+
+```powershell
+cd D:\apps\writegame
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-and-run-905.ps1
+```
+
+对应脚本见：
+
+- [scripts/deploy-and-run-905.ps1](../scripts/deploy-and-run-905.ps1)
+
+它会自动：
+
+- 创建虚拟环境
+- 安装依赖
+- 构建前端
+- 生成或修正 `.env` 中的 `HOST/PORT/DEBUG`
+- 以 905 端口直接启动服务
 
 ---
 
@@ -375,10 +398,9 @@ netstat -ano | findstr :905
 
 1. 给 `inkless` 加 A 记录，指向服务器公网 IP
 2. 安全组和 Windows 防火墙放行 905
-3. 在服务器上执行 [scripts/deploy.ps1](../scripts/deploy.ps1)
-4. 修改 `.env`，把 `PORT` 改成 905，填好 `SECRET_KEY` 和 API Key
-5. 执行 [scripts/start-prod-905.ps1](../scripts/start-prod-905.ps1)
-6. 浏览器打开：
+3. 在服务器上执行 [scripts/deploy-and-run-905.ps1](../scripts/deploy-and-run-905.ps1)
+4. 打开 `.env`，补全 `SECRET_KEY` 和 API Key
+5. 浏览器打开：
    - http://inkless.你的主域名后缀:905
 
 只要这一步通了，项目就已经不再依赖 GitHub Pages，而是在你自己的服务器域名上真实运行了。
