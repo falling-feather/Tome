@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "*"  # 逗号分隔白名单, 如 "http://localhost:5173,https://example.com"
 
-    APP_VERSION: str = "2.9.0"
+    APP_VERSION: str = "2.10.0"
 
     # 审计代理阈值 — 累计问题数 ≥ 此值时触发 LLM 重写, ×1.6 时降级到安全模板
     AUDIT_REWRITE_THRESHOLD: int = 5

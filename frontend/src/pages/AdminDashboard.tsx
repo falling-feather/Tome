@@ -1,16 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
 export function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
+  const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getAdminStats().then(setStats).catch(console.error).finally(() => setLoading(false));
+    Promise.all([
+      api.getAdminStats().catch(() => null),
+      api.getAdminHealth().catch(() => null),
+    ]).then(([s, h]) => {
+      setStats(s);
+      setHealth(h);
+      setLoading(false);
+    });
   }, []);
 
   if (loading) return <div className="flex items-center gap-sm"><div className="spinner" /> 加载中...</div>;
   if (!stats) return <div>加载失败</div>;
+
+  const counters = (health && health.metrics && health.metrics.counters) || {};
+  const timings = (health && health.metrics && health.metrics.timings) || {};
+  const llmIn = counters.llm_input_chars || 0;
+  const llmOut = counters.llm_output_chars || 0;
+  const llmTokens = counters.llm_tokens_est || 0;
+  const llmRequests = counters.llm_requests || 0;
+  const llmFailures = (counters.llm_total_failures || 0) + (counters.llm_completion_failures || 0);
+  const llmStreamTiming = timings.llm_stream_ms;
 
   return (
     <div className="fade-in">
@@ -33,6 +56,56 @@ export function AdminDashboard() {
           <div className="stat-number">{stats.total_logs}</div>
         </div>
       </div>
+
+      {health && (
+        <>
+          <h3 className="admin-section-title">LLM 调用指标</h3>
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-title">总请求</div>
+              <div className="stat-number">{formatNumber(llmRequests)}</div>
+              {llmFailures > 0 && (
+                <div className="stat-sub" style={{ color: 'var(--error)' }}>
+                  失败 {formatNumber(llmFailures)}
+                </div>
+              )}
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">输入字符</div>
+              <div className="stat-number">{formatNumber(llmIn)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">输出字符</div>
+              <div className="stat-number">{formatNumber(llmOut)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">Token 估算</div>
+              <div className="stat-number">{formatNumber(llmTokens)}</div>
+              <div className="stat-sub text-muted">≈ chars / 3</div>
+            </div>
+            {llmStreamTiming && (
+              <div className="stat-card">
+                <div className="stat-title">流式延迟</div>
+                <div className="stat-number">{llmStreamTiming.avg_ms}<span style={{ fontSize: 14 }}> ms</span></div>
+                <div className="stat-sub text-muted">
+                  p50 {llmStreamTiming.p50_ms}{llmStreamTiming.p95_ms != null && ` · p95 ${llmStreamTiming.p95_ms}`} ms
+                </div>
+              </div>
+            )}
+            {health.circuit_breakers && (
+              <div className="stat-card">
+                <div className="stat-title">熔断器</div>
+                <div className="stat-number" style={{ fontSize: 18 }}>
+                  {health.circuit_breakers.llm_primary?.state || '—'}
+                </div>
+                <div className="stat-sub text-muted">
+                  fallback: {health.circuit_breakers.llm_fallback?.state || '—'}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <h3 className="admin-section-title">最近注册用户</h3>
       <div className="table-wrap">

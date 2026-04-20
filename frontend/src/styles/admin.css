@@ -80,6 +80,13 @@
   margin-top: 4px;
 }
 
+.stat-card .stat-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+
 /* ---- Log Filters ---- */
 .log-filters {
   display: flex;
