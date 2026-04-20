@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { playMessageSound, sendNotification } from '../utils/sound';
 
@@ -54,6 +55,7 @@ function parseSegmentsRealtime(text: string): Segment[] | null {
 }
 
 export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProps) {
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamPhase, setStreamPhase] = useState<string>('');
@@ -163,7 +165,7 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        const abortMsg: Message = { role: 'system', content: '已停止生成。' };
+        const abortMsg: Message = { role: 'system', content: t('game.stopped') };
         onMessagesUpdate([...updatedMessages, abortMsg]);
       } else {
         const errorMsg: Message = { role: 'system', content: `错误：${err.message}` };
@@ -301,16 +303,16 @@ export function GameChat({ sessionId, messages, onMessagesUpdate }: GameChatProp
             value={input}
             onChange={(e) => { setInput(e.target.value); autoResize(); }}
             onKeyDown={handleKeyDown}
-            placeholder="输入你的行动... (Enter 发送, Shift+Enter 换行)"
+            placeholder={t('game.inputPlaceholder')}
             disabled={isStreaming}
             rows={1}
           />
           <button className="btn btn-primary" onClick={handleSubmit} disabled={isStreaming || !input.trim()}>
-            {isStreaming ? <span className="spinner" /> : '发送'}
+            {isStreaming ? <span className="spinner" /> : t('game.send')}
           </button>
           {isStreaming && (
-            <button className="btn btn-ghost" onClick={handleStop} title="停止生成">
-              停止
+            <button className="btn btn-ghost" onClick={handleStop} title={t('game.stop')}>
+              {t('game.stop')}
             </button>
           )}
         </div>

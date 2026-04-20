@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { LlmTrendChart } from '../components/LlmTrendChart';
 
@@ -9,9 +10,10 @@ function formatNumber(n: number): string {
 }
 
 function CostAlertBanner({ alerts }: { alerts: any }) {
+  const { t } = useTranslation();
   const items: { label: string; data: any }[] = [
-    { label: '今日', data: alerts.daily },
-    { label: '本月', data: alerts.monthly },
+    { label: t('admin.alertDaily'), data: alerts.daily },
+    { label: t('admin.alertMonthly'), data: alerts.monthly },
   ];
   const visible = items.filter((it) => it.data && it.data.level !== 'off' && it.data.level !== 'ok');
   if (visible.length === 0) return null;
@@ -34,12 +36,12 @@ function CostAlertBanner({ alerts }: { alerts: any }) {
               fontSize: 13,
             }}
           >
-            <strong>{it.label}LLM 费用</strong>
+            <strong>{it.label} {t('admin.alertLlmCost')}</strong>
             {' '}
-            {it.data.level === 'breached' ? '已超过阈值' : '已接近阈值'}：
+            {it.data.level === 'breached' ? t('admin.alertBreached') : t('admin.alertWarn')}:
             <span className="mono"> ${it.data.used_usd.toFixed(4)}</span> /
             <span className="mono"> ${it.data.limit_usd.toFixed(4)}</span>
-            （{pct}%，剩余 <span className="mono">${it.data.remaining_usd.toFixed(4)}</span>）
+            {' '}({pct}%, {t('admin.alertRemaining')} <span className="mono">${it.data.remaining_usd.toFixed(4)}</span>)
           </div>
         );
       })}
@@ -48,6 +50,7 @@ function CostAlertBanner({ alerts }: { alerts: any }) {
 }
 
 export function AdminDashboard() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<any>(null);
   const [health, setHealth] = useState<any>(null);
   const [trend, setTrend] = useState<any>(null);
@@ -89,8 +92,8 @@ export function AdminDashboard() {
     return () => window.removeEventListener('click', handler);
   }, [menuOpen]);
 
-  if (loading) return <div className="flex items-center gap-sm"><div className="spinner" /> 加载中...</div>;
-  if (!stats) return <div>加载失败</div>;
+  if (loading) return <div className="flex items-center gap-sm"><div className="spinner" /> {t('common.loading')}</div>;
+  if (!stats) return <div>{t('common.loadFailed')}</div>;
 
   const counters = (health && health.metrics && health.metrics.counters) || {};
   const timings = (health && health.metrics && health.metrics.timings) || {};
@@ -107,18 +110,18 @@ export function AdminDashboard() {
       {health && health.cost_alerts && (
         <CostAlertBanner alerts={health.cost_alerts} />
       )}
-      <h2 className="admin-section-title">系统概览</h2>
+      <h2 className="admin-section-title">{t('admin.overview')}</h2>
       <div className="stats-grid">
         <div className="stat-card">
-          <div className="stat-title">注册用户</div>
+          <div className="stat-title">{t('admin.kpiTotalUsers')}</div>
           <div className="stat-number">{stats.total_users}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-title">游戏会话</div>
+          <div className="stat-title">{t('admin.kpiSessions')}</div>
           <div className="stat-number">{stats.total_sessions}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-title">消息总数</div>
+          <div className="stat-title">{t('admin.kpiMessages')}</div>
           <div className="stat-number">{stats.total_messages}</div>
         </div>
         <div className="stat-card">
@@ -129,7 +132,7 @@ export function AdminDashboard() {
 
       {health && (
         <>
-          <h3 className="admin-section-title">LLM 调用指标</h3>
+          <h3 className="admin-section-title">{t('admin.llmSection')}</h3>
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-title">总请求</div>
@@ -236,8 +239,8 @@ export function AdminDashboard() {
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, gap: 8, flexWrap: 'wrap' }}>
             <h3 className="admin-section-title" style={{ margin: 0 }}>
-              近 {trendHours >= 24 ? `${Math.round(trendHours / 24)}d` : `${trendHours}h`} LLM 调用趋势
-              {trendLoading && <span className="admin-meta" style={{ marginLeft: 8 }}>加载中…</span>}
+              {t('admin.trendTitle', { label: trendHours >= 24 ? t('admin.rangeDay', { n: Math.round(trendHours / 24) }) : t('admin.rangeHour', { n: trendHours }) })}
+              {trendLoading && <span className="admin-meta" style={{ marginLeft: 8 }}>{t('admin.trendLoading')}</span>}
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <div className="log-filters" style={{ margin: 0 }}>
@@ -260,27 +263,27 @@ export function AdminDashboard() {
                   className={trendMetric === 'tokens' ? 'btn btn-primary' : 'btn'}
                   onClick={() => setTrendMetric('tokens')}
                 >
-                  Token
+                  {t('admin.metricTokens')}
                 </button>
                 <button
                   className={trendMetric === 'cost' ? 'btn btn-primary' : 'btn'}
                   onClick={() => setTrendMetric('cost')}
                 >
-                  费用
+                  {t('admin.metricCost')}
                 </button>
                 <button
                   className={trendMetric === 'requests' ? 'btn btn-primary' : 'btn'}
                   onClick={() => setTrendMetric('requests')}
                 >
-                  请求数
+                  {t('admin.metricRequests')}
                 </button>
               </div>
               <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
                 <button
                   className="btn"
                   onClick={() => setMenuOpen((v) => !v)}
-                  aria-label="更多操作"
-                  title="更多操作"
+                  aria-label={t('common.more')}
+                  title={t('common.more')}
                 >
                   ⋯
                 </button>
@@ -300,16 +303,16 @@ export function AdminDashboard() {
                     }}
                   >
                     {[
-                      { label: '导出当前范围 CSV', act: () => api.exportLlmUsage(Math.max(1, Math.round(trendHours / 24)), 'csv') },
-                      { label: '导出当前范围 JSON', act: () => api.exportLlmUsage(Math.max(1, Math.round(trendHours / 24)), 'json') },
+                      { label: t('admin.menuExportCsv'), act: () => api.exportLlmUsage(Math.max(1, Math.round(trendHours / 24)), 'csv') },
+                      { label: t('admin.menuExportJson'), act: () => api.exportLlmUsage(Math.max(1, Math.round(trendHours / 24)), 'json') },
                       {
-                        label: '复制当前数据 JSON',
+                        label: t('admin.menuCopyJson'),
                         act: async () => {
                           await navigator.clipboard.writeText(JSON.stringify(trend, null, 2));
-                          alert('已复制到剪贴板');
+                          alert(t('admin.menuCopied'));
                         },
                       },
-                      { label: '刷新', act: () => { setTrendHours((h) => h); api.getLlmTrend(trendHours).then(setTrend).catch(() => {}); } },
+                      { label: t('common.refresh'), act: () => { setTrendHours((h) => h); api.getLlmTrend(trendHours).then(setTrend).catch(() => {}); } },
                     ].map((it) => (
                       <button
                         key={it.label}
@@ -329,14 +332,14 @@ export function AdminDashboard() {
             <LlmTrendChart points={trend.points} hours={trend.hours} metric={trendMetric} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <span className="admin-meta">导出最近</span>
+            <span className="admin-meta">{t('admin.exportRecent')}</span>
             {[1, 7, 30].map((d) => (
               <button
                 key={`csv-${d}`}
                 className="btn"
                 onClick={() => api.exportLlmUsage(d, 'csv').catch((e) => alert(String(e)))}
               >
-                {d}天 CSV
+                {t('admin.exportNDayCsv', { n: d })}
               </button>
             ))}
             {[1, 7, 30].map((d) => (
@@ -345,14 +348,14 @@ export function AdminDashboard() {
                 className="btn"
                 onClick={() => api.exportLlmUsage(d, 'json').catch((e) => alert(String(e)))}
               >
-                {d}天 JSON
+                {t('admin.exportNDayJson', { n: d })}
               </button>
             ))}
           </div>
         </>
       )}
 
-      <h3 className="admin-section-title">最近注册用户</h3>
+      <h3 className="admin-section-title">{t('admin.recentUsers')}</h3>
       <div className="table-wrap">
         <table>
           <thead>
