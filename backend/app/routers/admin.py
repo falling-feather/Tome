@@ -148,6 +148,14 @@ async def create_world_entry(
     db.add(entry)
     await db.commit()
     await db.refresh(entry)
+    # 尝试生成嵌入（失败不阶作）
+    try:
+        from backend.app.services.world_book import WorldBookService
+        svc = WorldBookService(db)
+        await svc.embed_entry(entry)
+        await db.commit()
+    except Exception:
+        pass
     return {"id": entry.id, "title": entry.title}
 
 
@@ -167,6 +175,15 @@ async def update_world_entry(
                   "content", "chapter_min", "chapter_max", "priority", "is_active"]:
         if field in data:
             setattr(entry, field, data[field])
+    # 内容变动后清空嵌入并尝试重生成
+    if any(k in data for k in ("title", "keywords", "content")):
+        entry.embedding = None
+        try:
+            from backend.app.services.world_book import WorldBookService
+            svc = WorldBookService(db)
+            await svc.embed_entry(entry)
+        except Exception:
+            pass
     await db.commit()
     return {"status": "ok"}
 
@@ -184,6 +201,17 @@ async def delete_world_entry(
     await db.delete(entry)
     await db.commit()
     return {"status": "ok"}
+
+
+@router.post("/world-entries/reembed")
+async def reembed_world_entries(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """为所有未生成嵌入的世界书条目批量生成。"""
+    from backend.app.services.world_book import WorldBookService
+    svc = WorldBookService(db)
+    return await svc.reembed_all()
 
 
 # ---------------------------------------------------------------------------

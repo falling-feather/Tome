@@ -144,6 +144,11 @@ export const api = {
     request<any>(`/admin/world-entries/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteWorldEntry: (id: number) =>
     request<any>(`/admin/world-entries/${id}`, { method: 'DELETE' }),
+  reembedWorldEntries: () =>
+    request<{ processed: number; success: number; skipped: number }>(
+      '/admin/world-entries/reembed',
+      { method: 'POST' },
+    ),
 
   // Prompt Templates
   getPromptTemplates: () => request<any>('/admin/prompt-templates'),

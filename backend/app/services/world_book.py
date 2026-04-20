@@ -223,10 +223,17 @@ SEED_ENTRIES: list[dict] = [
 
 
 class WorldBookService:
-    """世界书检索服务 — 基于关键词匹配的轻量级 RAG"""
+    """世界书检索服务 — 关键词 + 嵌入向量混合 RAG"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, embedder=None):
         self.db = db
+        # 延迟导入避免循环依赖
+        from backend.app.services.embeddings import EmbeddingService, decode_embedding, cosine_similarity, encode_embedding
+        self._EmbeddingService = EmbeddingService
+        self._decode_embedding = decode_embedding
+        self._cosine = cosine_similarity
+        self._encode_embedding = encode_embedding
+        self.embedder = embedder  # 测试可注入；否则 retrieve 自行构造
 
     # ------------------------------------------------------------------
     # 种子数据初始化
@@ -266,14 +273,11 @@ class WorldBookService:
         top_k: int = 6,
     ) -> list[dict]:
         """
-        根据场景、章节和上下文文本检索最相关的世界书条目。
-
-        使用关键词匹配 + 优先级排序:
-        1. 筛选: scenario 匹配 (或通配 *)，章节范围，is_active
-        2. 评分: keywords 与 context_text 的重叠度 + priority 权重
-        3. 返回 top_k 条
+        混合检索：关键词重叠 + 嵌入向量余弦 + 优先级 + 层级权重。
+        若未配置嵌入或调用失败，自动退化为纯关键词模式（向后兼容）。
         """
-        # 构建查询条件
+        from backend.app.config import settings as _settings
+
         conditions = [
             WorldEntry.is_active == True,
             WorldEntry.scenario.in_([scenario, "*"]),
@@ -281,28 +285,39 @@ class WorldBookService:
         if layer:
             conditions.append(WorldEntry.layer == layer)
 
-        result = await self.db.execute(
-            select(WorldEntry).where(and_(*conditions))
-        )
+        result = await self.db.execute(select(WorldEntry).where(and_(*conditions)))
         entries = result.scalars().all()
 
-        # 评分
+        # 嵌入：仅当存在已存向量的条目时尝试计算 query embedding
+        query_vec = None
+        embedding_weight = float(getattr(_settings, "EMBEDDING_WEIGHT", 0) or 0)
+        if embedding_weight > 0 and any(e.embedding for e in entries):
+            embedder = self.embedder or self._EmbeddingService(self.db)
+            try:
+                query_vec = await embedder.embed_text(context_text[-800:])
+            except Exception as e:
+                logger.warning(f"嵌入查询失败: {e}")
+                query_vec = None
+
         scored = []
         context_tokens = set(self._tokenize(context_text))
 
         for entry in entries:
-            # 章节范围过滤
             if entry.chapter_min > 0 and chapter < entry.chapter_min:
                 continue
             if entry.chapter_max > 0 and chapter > entry.chapter_max:
                 continue
 
-            # 关键词匹配评分
             entry_keywords = set(self._tokenize(entry.keywords + " " + entry.title))
             overlap = len(context_tokens & entry_keywords)
             score = overlap * 10 + entry.priority
 
-            # core 层加权
+            if query_vec is not None and entry.embedding:
+                vec = self._decode_embedding(entry.embedding)
+                if vec is not None:
+                    cos = self._cosine(query_vec, vec)
+                    score += cos * embedding_weight
+
             if entry.layer == "core":
                 score += 20
             elif entry.layer == "chapter":
@@ -317,13 +332,50 @@ class WorldBookService:
                 "score": score,
             })
 
-        # 按分数降序排列，取 top_k
         scored.sort(key=lambda x: x["score"], reverse=True)
         selected = scored[:top_k]
 
-        logger.debug(f"世界书检索: scenario={scenario}, chapter={chapter}, "
-                     f"candidates={len(scored)}, selected={len(selected)}")
+        logger.debug(
+            f"世界书检索: scenario={scenario}, chapter={chapter}, "
+            f"candidates={len(scored)}, selected={len(selected)}, "
+            f"vector={'on' if query_vec is not None else 'off'}"
+        )
         return selected
+
+    # ------------------------------------------------------------------
+    # 嵌入维护
+    # ------------------------------------------------------------------
+    async def reembed_all(self, embedder=None) -> dict:
+        """对所有未生成嵌入的条目批量生成；返回 {processed, success, skipped}"""
+        embedder = embedder or self.embedder or self._EmbeddingService(self.db)
+        result = await self.db.execute(select(WorldEntry))
+        entries = result.scalars().all()
+        processed = 0
+        success = 0
+        skipped = 0
+        for entry in entries:
+            if entry.embedding:
+                skipped += 1
+                continue
+            text = f"{entry.title}\n关键词: {entry.keywords}\n{entry.content}"
+            vec = await embedder.embed_text(text)
+            processed += 1
+            if vec is not None:
+                entry.embedding = self._encode_embedding(vec)
+                success += 1
+        await self.db.commit()
+        logger.info(f"reembed_all: processed={processed}, success={success}, skipped={skipped}")
+        return {"processed": processed, "success": success, "skipped": skipped}
+
+    async def embed_entry(self, entry: WorldEntry, embedder=None) -> bool:
+        """为单条条目生成嵌入；写入 db.session 但不 commit。"""
+        embedder = embedder or self.embedder or self._EmbeddingService(self.db)
+        text = f"{entry.title}\n关键词: {entry.keywords}\n{entry.content}"
+        vec = await embedder.embed_text(text)
+        if vec is None:
+            return False
+        entry.embedding = self._encode_embedding(vec)
+        return True
 
     # ------------------------------------------------------------------
     # 内部方法

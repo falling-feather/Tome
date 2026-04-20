@@ -113,6 +113,7 @@ class WorldEntry(Base):
     chapter_max = Column(Integer, default=0)                        # 生效最大章节 (0=不限)
     priority = Column(Integer, default=0)                           # 越高越优先
     is_active = Column(Boolean, default=True)
+    embedding = Column(Text, nullable=True)  # JSON 化 float 向量；EmbeddingService 异步填充
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):

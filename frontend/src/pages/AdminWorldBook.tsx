@@ -89,7 +89,21 @@ export function AdminWorldBook() {
     <div className="admin-section">
       <div className="admin-header-row">
         <h2>世界书管理</h2>
-        <button className="btn-primary" onClick={startCreate}>+ 新增条目</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={async () => {
+              if (!confirm('对所有未生成嵌入的条目批量调用 embeddings API，可能产生少量费用，是否继续？')) return;
+              try {
+                const r = await api.reembedWorldEntries();
+                alert(`完成：处理 ${r.processed} 条，成功 ${r.success} 条，跳过 ${r.skipped} 条`);
+                load();
+              } catch (e: any) {
+                alert(e.message || '失败');
+              }
+            }}
+          >▤ 批量重嵌入</button>
+          <button className="btn-primary" onClick={startCreate}>+ 新增条目</button>
+        </div>
       </div>
 
       <div className="admin-filters">
