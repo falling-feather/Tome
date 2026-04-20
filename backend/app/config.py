@@ -27,7 +27,12 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "*"  # 逗号分隔白名单, 如 "http://localhost:5173,https://example.com"
 
-    APP_VERSION: str = "2.10.0"
+    APP_VERSION: str = "2.11.0"
+
+    # LLM 计费 — JSON 字符串覆盖 cost.DEFAULT_PRICING（USD per 1K tokens, [input, output]）
+    # 例：'{"my-model": [0.001, 0.003]}' 或 '{"my-model": {"input": 0.001, "output": 0.003}}'
+    LLM_PRICING_JSON: str = ""
+    USD_TO_CNY: float = 7.2
 
     # 审计代理阈值 — 累计问题数 ≥ 此值时触发 LLM 重写, ×1.6 时降级到安全模板
     AUDIT_REWRITE_THRESHOLD: int = 5

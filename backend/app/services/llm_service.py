@@ -11,6 +11,7 @@ from backend.app.services.prompt_assembler import PromptAssembler
 from backend.app.services.world_book import WorldBookService
 from backend.app.services.memory_service import MemoryService
 from backend.app.tracing import traced_span
+from backend.app.services.cost import record_usage as _record_llm_usage
 
 logger = logging.getLogger("inkless")
 from backend.app.services.resilience import (
@@ -217,6 +218,7 @@ class LLMService:
                 health_metrics.inc("llm_input_chars", input_chars)
                 health_metrics.inc("llm_output_chars", output_chars)
                 health_metrics.inc("llm_tokens_est", input_tokens_est + output_tokens_est)
+                _record_llm_usage(model, input_tokens_est, output_tokens_est)
                 if span is not None:
                     try:
                         span.set_attribute("llm.output_chars", output_chars)
@@ -321,6 +323,7 @@ class LLMService:
                     health_metrics.inc("llm_input_chars", len(prompt))
                     health_metrics.inc("llm_output_chars", len(text))
                     health_metrics.inc("llm_tokens_est", in_tok + out_tok)
+                    _record_llm_usage(model, in_tok, out_tok)
                     if span is not None:
                         try:
                             span.set_attribute("llm.output_chars", len(text))

@@ -34,6 +34,7 @@ export function AdminDashboard() {
   const llmRequests = counters.llm_requests || 0;
   const llmFailures = (counters.llm_total_failures || 0) + (counters.llm_completion_failures || 0);
   const llmStreamTiming = timings.llm_stream_ms;
+  const llmCost = health && health.llm_cost;
 
   return (
     <div className="fade-in">
@@ -104,6 +105,61 @@ export function AdminDashboard() {
               </div>
             )}
           </div>
+
+          {llmCost && llmCost.models && llmCost.models.length > 0 && (
+            <>
+              <h3 className="admin-section-title">LLM 费用估算</h3>
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-title">总费用 (USD)</div>
+                  <div className="stat-number">${llmCost.total_cost_usd.toFixed(4)}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">总费用 (CNY)</div>
+                  <div className="stat-number">¥{llmCost.total_cost_cny.toFixed(2)}</div>
+                  <div className="stat-sub text-muted">汇率 1 USD = {llmCost.usd_to_cny} CNY</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">输入 Token</div>
+                  <div className="stat-number">{formatNumber(llmCost.total_input_tokens)}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">输出 Token</div>
+                  <div className="stat-number">{formatNumber(llmCost.total_output_tokens)}</div>
+                </div>
+              </div>
+
+              <div className="table-wrap" style={{ marginTop: 12 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>模型</th>
+                      <th>请求</th>
+                      <th>输入 Token</th>
+                      <th>输出 Token</th>
+                      <th>USD</th>
+                      <th>CNY</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {llmCost.models.map((m: any) => (
+                      <tr key={m.model}>
+                        <td>
+                          {m.model}
+                          {!m.priced && <span className="badge" style={{ marginLeft: 6 }}>未定价</span>}
+                        </td>
+                        <td className="mono">{m.requests}</td>
+                        <td className="mono">{formatNumber(m.input_tokens)}</td>
+                        <td className="mono">{formatNumber(m.output_tokens)}</td>
+                        <td className="mono">${m.cost_usd.toFixed(4)}</td>
+                        <td className="mono">¥{m.cost_cny.toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
 

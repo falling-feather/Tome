@@ -370,6 +370,7 @@ async def update_prompt_template(
 @router.get("/health")
 async def get_health(admin: User = Depends(require_admin)):
     """系统健康报告"""
+    from backend.app.services.cost import compute_cost_report
     return {
         "circuit_breakers": {
             "llm_primary": llm_circuit_breaker.get_stats(),
@@ -378,4 +379,5 @@ async def get_health(admin: User = Depends(require_admin)):
         "rate_limiter": game_rate_limiter.get_stats(),
         "daily_quota": daily_quota.get_stats(),
         "metrics": health_metrics.get_report(),
+        "llm_cost": compute_cost_report(),
     }
