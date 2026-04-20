@@ -82,3 +82,50 @@
   --warning: #f59e0b;
   --warning-bg: #451a03;
 }
+
+/* ---- Sepia Theme（羊皮纸/古籍·阅读模式） ---- */
+[data-theme="sepia"] {
+  --bg-primary: #f4ecd8;
+  --bg-secondary: #ede3c7;
+  --bg-tertiary: #e2d6b3;
+  --bg-dark: #3a2e1f;
+  --bg-dark-secondary: #4a3b27;
+  --bg-card: #f8f1de;
+  --bg-input: #ede3c7;
+
+  --text-primary: #3a2e1f;
+  --text-secondary: #6b5538;
+  --text-muted: #9b8763;
+  --text-inverse: #f8f1de;
+
+  --accent: #8b5a2b;
+  --accent-hover: #6f4621;
+  --accent-light: #e6d3b3;
+  --accent-cyan: #5d8aa8;
+  --accent-subtle: #efe3c8;
+
+  --border-light: #d4c19a;
+  --border-medium: #b8a075;
+  --border-focus: #8b5a2b;
+
+  --success: #4a6b1f;
+  --success-bg: #e6e3c8;
+  --error: #a83232;
+  --error-bg: #f0d9c8;
+  --warning: #b87b1a;
+  --warning-bg: #f0e3c8;
+}
+
+/* ---- Font Family Variants（用户可在 Header 切换） ---- */
+[data-font="sans"] {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+[data-font="serif"] {
+  --font-sans: 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', Georgia, serif;
+}
+[data-font="cn"] {
+  --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'Source Han Sans SC', sans-serif;
+}
+[data-font="mono"] {
+  --font-sans: 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+}

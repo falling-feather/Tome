@@ -8,7 +8,12 @@ import './i18n'
 // Initialize theme before render to prevent flash
 const savedTheme = localStorage.getItem('theme');
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-document.documentElement.setAttribute('data-theme', savedTheme || (prefersDark ? 'dark' : 'light'));
+const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light');
+document.documentElement.setAttribute('data-theme', initialTheme);
+
+// Initialize font family
+const savedFont = localStorage.getItem('inkless-font') || 'sans';
+document.documentElement.setAttribute('data-font', savedFont);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
