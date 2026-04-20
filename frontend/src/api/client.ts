@@ -148,6 +148,7 @@ export const api = {
   // Admin
   getAdminStats: () => request<any>('/admin/stats'),
   getAdminHealth: () => request<any>('/admin/health'),
+  getLlmTrend: (hours = 24) => request<any>(`/admin/llm-trend?hours=${hours}`),
   getAdminLogs: (params: { page?: number; page_size?: number; action?: string; username?: string }) => {
     const qs = new URLSearchParams();
     if (params.page) qs.set('page', String(params.page));

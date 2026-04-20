@@ -368,9 +368,13 @@ async def update_prompt_template(
 # 健康与指标端点
 # ---------------------------------------------------------------------------
 @router.get("/health")
-async def get_health(admin: User = Depends(require_admin)):
+async def get_health(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """系统健康报告"""
-    from backend.app.services.cost import compute_cost_report
+    from backend.app.services.cost import compute_cost_report, flush_pending_to_db
+    try:
+        await flush_pending_to_db(db)
+    except Exception:
+        pass
     return {
         "circuit_breakers": {
             "llm_primary": llm_circuit_breaker.get_stats(),
@@ -381,3 +385,20 @@ async def get_health(admin: User = Depends(require_admin)):
         "metrics": health_metrics.get_report(),
         "llm_cost": compute_cost_report(),
     }
+
+
+@router.get("/llm-trend")
+async def get_llm_trend(
+    hours: int = 24,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """近 N 小时 LLM 调用与费用趋势 (默认 24h)"""
+    from backend.app.services.cost import flush_pending_to_db, get_usage_trend
+    try:
+        await flush_pending_to_db(db)
+    except Exception:
+        pass
+    hours = max(1, min(int(hours or 24), 24 * 30))  # cap 30 days
+    points = await get_usage_trend(db, hours=hours)
+    return {"hours": hours, "points": points}

@@ -163,3 +163,17 @@ class CustomStory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", backref="custom_stories")
+
+
+class LlmUsageHour(Base):
+    """每模型按小时聚合的 LLM 用量与费用 (v2.12 趋势图数据源)"""
+    __tablename__ = "llm_usage_hour"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    hour_bucket = Column(DateTime, nullable=False, index=True)  # UTC, 已对齐到整点
+    model = Column(String(128), nullable=False, index=True)
+    requests = Column(Integer, default=0)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+

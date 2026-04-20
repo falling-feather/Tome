@@ -44,14 +44,40 @@ _llm_usage: dict[str, dict[str, int]] = defaultdict(
     lambda: {"input_tokens": 0, "output_tokens": 0, "requests": 0}
 )
 
+# 待持久化的小时桶 (hour_iso, model) -> {requests, input_tokens, output_tokens, cost_usd}
+_pending_hour: dict[tuple[str, str], dict[str, float]] = defaultdict(
+    lambda: {"requests": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+)
+
+
+def _hour_bucket_iso(now=None):
+    import datetime as _dt
+    now = now or _dt.datetime.utcnow()
+    return now.replace(minute=0, second=0, microsecond=0).isoformat()
+
 
 def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
     if not model:
         model = "unknown"
     bucket = _llm_usage[model]
-    bucket["input_tokens"] += max(0, int(input_tokens))
-    bucket["output_tokens"] += max(0, int(output_tokens))
+    in_tok = max(0, int(input_tokens))
+    out_tok = max(0, int(output_tokens))
+    bucket["input_tokens"] += in_tok
+    bucket["output_tokens"] += out_tok
     bucket["requests"] += 1
+
+    # 同步累加到当前小时桶
+    pricing = _resolve_pricing()
+    price = _match_model(model, pricing)
+    cost_usd = 0.0
+    if price is not None:
+        cost_usd = (in_tok / 1000.0) * price[0] + (out_tok / 1000.0) * price[1]
+    hour_iso = _hour_bucket_iso()
+    pb = _pending_hour[(hour_iso, model)]
+    pb["requests"] += 1
+    pb["input_tokens"] += in_tok
+    pb["output_tokens"] += out_tok
+    pb["cost_usd"] += cost_usd
 
 
 def _resolve_pricing() -> dict[str, tuple[float, float]]:
@@ -123,3 +149,77 @@ def compute_cost_report(usd_to_cny: float | None = None) -> dict[str, Any]:
 
 def reset_usage() -> None:
     _llm_usage.clear()
+    _pending_hour.clear()
+
+
+async def flush_pending_to_db(db) -> int:
+    """把内存中的小时桶累加到 DB 持久化表 llm_usage_hour，返回写入/更新行数。"""
+    from sqlalchemy import select
+    from backend.app.models import LlmUsageHour
+    import datetime as _dt
+
+    if not _pending_hour:
+        return 0
+    pending = dict(_pending_hour)
+    _pending_hour.clear()
+
+    n = 0
+    for (hour_iso, model), delta in pending.items():
+        try:
+            hour_dt = _dt.datetime.fromisoformat(hour_iso)
+        except Exception:
+            continue
+        stmt = select(LlmUsageHour).where(
+            LlmUsageHour.hour_bucket == hour_dt,
+            LlmUsageHour.model == model,
+        )
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            existing.requests = (existing.requests or 0) + int(delta["requests"])
+            existing.input_tokens = (existing.input_tokens or 0) + int(delta["input_tokens"])
+            existing.output_tokens = (existing.output_tokens or 0) + int(delta["output_tokens"])
+            existing.cost_usd = float(existing.cost_usd or 0.0) + float(delta["cost_usd"])
+        else:
+            db.add(LlmUsageHour(
+                hour_bucket=hour_dt,
+                model=model,
+                requests=int(delta["requests"]),
+                input_tokens=int(delta["input_tokens"]),
+                output_tokens=int(delta["output_tokens"]),
+                cost_usd=float(delta["cost_usd"]),
+            ))
+        n += 1
+    await db.commit()
+    return n
+
+
+async def get_usage_trend(db, hours: int = 24) -> list[dict]:
+    """聚合最近 N 小时的总用量与费用，按小时降序到升序排列。"""
+    from sqlalchemy import select, func
+    from backend.app.models import LlmUsageHour
+    import datetime as _dt
+
+    cutoff = _dt.datetime.utcnow().replace(minute=0, second=0, microsecond=0) - _dt.timedelta(hours=max(1, hours) - 1)
+    stmt = (
+        select(
+            LlmUsageHour.hour_bucket,
+            func.sum(LlmUsageHour.requests).label("requests"),
+            func.sum(LlmUsageHour.input_tokens).label("input_tokens"),
+            func.sum(LlmUsageHour.output_tokens).label("output_tokens"),
+            func.sum(LlmUsageHour.cost_usd).label("cost_usd"),
+        )
+        .where(LlmUsageHour.hour_bucket >= cutoff)
+        .group_by(LlmUsageHour.hour_bucket)
+        .order_by(LlmUsageHour.hour_bucket.asc())
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "hour": r.hour_bucket.isoformat(),
+            "requests": int(r.requests or 0),
+            "input_tokens": int(r.input_tokens or 0),
+            "output_tokens": int(r.output_tokens or 0),
+            "cost_usd": round(float(r.cost_usd or 0.0), 4),
+        }
+        for r in rows
+    ]

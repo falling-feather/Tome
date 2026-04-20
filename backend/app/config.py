@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "*"  # 逗号分隔白名单, 如 "http://localhost:5173,https://example.com"
 
-    APP_VERSION: str = "2.11.0"
+    APP_VERSION: str = "2.12.0"
 
     # LLM 计费 — JSON 字符串覆盖 cost.DEFAULT_PRICING（USD per 1K tokens, [input, output]）
     # 例：'{"my-model": [0.001, 0.003]}' 或 '{"my-model": {"input": 0.001, "output": 0.003}}'

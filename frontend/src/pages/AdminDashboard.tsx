@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { LlmTrendChart } from '../components/LlmTrendChart';
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
@@ -10,15 +11,19 @@ function formatNumber(n: number): string {
 export function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
   const [health, setHealth] = useState<any>(null);
+  const [trend, setTrend] = useState<any>(null);
+  const [trendMetric, setTrendMetric] = useState<'tokens' | 'cost' | 'requests'>('tokens');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.getAdminStats().catch(() => null),
       api.getAdminHealth().catch(() => null),
-    ]).then(([s, h]) => {
+      api.getLlmTrend(24).catch(() => null),
+    ]).then(([s, h, t]) => {
       setStats(s);
       setHealth(h);
+      setTrend(t);
       setLoading(false);
     });
   }, []);
@@ -160,6 +165,37 @@ export function AdminDashboard() {
               </div>
             </>
           )}
+        </>
+      )}
+
+      {trend && trend.points && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24 }}>
+            <h3 className="admin-section-title" style={{ margin: 0 }}>近 {trend.hours}h LLM 调用趋势</h3>
+            <div className="log-filters" style={{ margin: 0 }}>
+              <button
+                className={trendMetric === 'tokens' ? 'btn btn-primary' : 'btn'}
+                onClick={() => setTrendMetric('tokens')}
+              >
+                Token
+              </button>
+              <button
+                className={trendMetric === 'cost' ? 'btn btn-primary' : 'btn'}
+                onClick={() => setTrendMetric('cost')}
+              >
+                费用
+              </button>
+              <button
+                className={trendMetric === 'requests' ? 'btn btn-primary' : 'btn'}
+                onClick={() => setTrendMetric('requests')}
+              >
+                请求数
+              </button>
+            </div>
+          </div>
+          <div className="card" style={{ padding: 12, marginTop: 8 }}>
+            <LlmTrendChart points={trend.points} hours={trend.hours} metric={trendMetric} />
+          </div>
         </>
       )}
 
