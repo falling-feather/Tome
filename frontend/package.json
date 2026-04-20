@@ -1,7 +1,7 @@
 {
   "name": "inkless-frontend",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "i18next": "^26.0.6",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-i18next": "^17.0.4",
     "react-router-dom": "^6.21.0"
   },
   "devDependencies": {

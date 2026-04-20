@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../stores/auth';
 import '../styles/login.css';
 
@@ -11,11 +12,12 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()) {
-      setError('请填写用户名和密码');
+      setError(t('login.empty'));
       return;
     }
     setError('');
@@ -30,7 +32,7 @@ export function LoginPage() {
       const isAdmin = localStorage.getItem('isAdmin') === 'true';
       navigate(isAdmin ? '/admin' : '/game', { replace: true });
     } catch (err: any) {
-      setError(err.message || '操作失败');
+      setError(err.message || t('login.failed'));
     } finally {
       setLoading(false);
     }
@@ -40,16 +42,16 @@ export function LoginPage() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-logo">
-          <h1>不 存 在 之 书</h1>
-          <div className="sub">Inkless — AI Interactive Narrative</div>
+          <h1>{t('login.title')}</h1>
+          <div className="sub">{t('login.subtitle')}</div>
         </div>
 
         <div className="login-tabs">
           <button className={`login-tab ${mode === 'login' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(''); }}>
-            登录
+            {t('login.tabLogin')}
           </button>
           <button className={`login-tab ${mode === 'register' ? 'active' : ''}`} onClick={() => { setMode('register'); setError(''); }}>
-            注册
+            {t('login.tabRegister')}
           </button>
         </div>
 
@@ -57,35 +59,35 @@ export function LoginPage() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-field">
-            <label>用户名</label>
+            <label>{t('login.usernameLabel')}</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="输入用户名"
+              placeholder={t('login.usernamePlaceholder')}
               autoComplete="username"
               autoFocus
             />
           </div>
           <div className="form-field">
-            <label>密码</label>
+            <label>{t('login.passwordLabel')}</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="输入密码"
+              placeholder={t('login.passwordPlaceholder')}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? <span className="spinner" /> : (mode === 'login' ? '登录' : '注册')}
+            {loading ? <span className="spinner" /> : (mode === 'login' ? t('login.submit') : t('login.submitRegister'))}
           </button>
         </form>
 
         <div className="login-footer">
           {mode === 'login'
-            ? <span>没有账号？<a onClick={() => setMode('register')}>注册新账号</a></span>
-            : <span>已有账号？<a onClick={() => setMode('login')}>返回登录</a></span>
+            ? <span>{t('login.toRegister')} <a onClick={() => setMode('register')}>{t('login.toRegisterAction')}</a></span>
+            : <span>{t('login.toLogin')} <a onClick={() => setMode('login')}>{t('login.toLoginAction')}</a></span>
           }
         </div>
       </div>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../stores/auth';
+import { setLanguage } from '../i18n';
 
 function getInitialTheme(): 'light' | 'dark' {
   const saved = localStorage.getItem('theme');
@@ -11,6 +13,7 @@ function getInitialTheme(): 'light' | 'dark' {
 export function Header() {
   const { username, isAdmin, logout } = useAuth();
   const location = useLocation();
+  const { t, i18n } = useTranslation();
   const [mobileNav, setMobileNav] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
 
@@ -26,44 +29,52 @@ export function Header() {
   }, [theme]);
 
   const toggleTheme = () => setTheme((t) => t === 'light' ? 'dark' : 'light');
+  const toggleLang = () => setLanguage(i18n.language === 'zh-CN' ? 'en-US' : 'zh-CN');
 
   return (
     <header className="app-header">
       <div className="header-left">
-        <button className="mobile-menu-btn" onClick={() => setMobileNav(!mobileNav)} aria-label="菜单">
+        <button className="mobile-menu-btn" onClick={() => setMobileNav(!mobileNav)} aria-label={t('nav.menu')}>
           {mobileNav ? '✕' : '☰'}
         </button>
         <div className="header-logo">
           <span className="logo-icon">📖</span>
-          不存在之书
+          {t('app.title')}
         </div>
         <nav className={`header-nav${mobileNav ? ' mobile-open' : ''}`}>
           {isAdmin ? (
             <>
-              <Link to="/admin" className={isActive('/admin')}>控制台</Link>
-              <Link to="/game" className={isActive('/game')}>冒险</Link>
+              <Link to="/admin" className={isActive('/admin')}>{t('nav.console')}</Link>
+              <Link to="/game" className={isActive('/game')}>{t('nav.adventure')}</Link>
             </>
           ) : (
-            <Link to="/game" className={isActive('/game')}>冒险</Link>
+            <Link to="/game" className={isActive('/game')}>{t('nav.adventure')}</Link>
           )}
-          <Link to="/stories" className={isActive('/stories')}>自编故事</Link>
-          <Link to="/settings" className={isActive('/settings')}>设置</Link>
+          <Link to="/stories" className={isActive('/stories')}>{t('nav.stories')}</Link>
+          <Link to="/settings" className={isActive('/settings')}>{t('nav.settings')}</Link>
         </nav>
       </div>
       <div className="header-right">
         <button
           className="btn btn-ghost btn-sm theme-toggle"
+          onClick={toggleLang}
+          title={i18n.language === 'zh-CN' ? t('header.switchToEnglish') : t('header.switchToChinese')}
+        >
+          {i18n.language === 'zh-CN' ? 'EN' : '中'}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm theme-toggle"
           onClick={toggleTheme}
-          title={theme === 'light' ? '切换暗色模式' : '切换亮色模式'}
+          title={theme === 'light' ? t('header.themeToDark') : t('header.themeToLight')}
         >
           {theme === 'light' ? '🌙' : '☀️'}
         </button>
         <div className="header-user">
           <span className="user-avatar">{username?.[0]?.toUpperCase() || 'U'}</span>
           <span>{username}</span>
-          {isAdmin && <span className="badge badge-blue">管理员</span>}
+          {isAdmin && <span className="badge badge-blue">{t('header.admin')}</span>}
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={logout}>退出</button>
+        <button className="btn btn-ghost btn-sm" onClick={logout}>{t('nav.logout')}</button>
       </div>
       {mobileNav && <div className="mobile-backdrop active" onClick={() => setMobileNav(false)} />}
     </header>
