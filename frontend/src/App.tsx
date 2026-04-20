@@ -14,6 +14,10 @@ import { AdminWorldBook } from './pages/AdminWorldBook';
 import { AdminGameEvents } from './pages/AdminGameEvents';
 import { StoryPage } from './pages/StoryPage';
 
+const ROUTER_BASENAME = import.meta.env.BASE_URL === '/'
+  ? '/'
+  : import.meta.env.BASE_URL.replace(/\/$/, '');
+
 function AppRoutes() {
   const { token, isAdmin } = useAuth();
 
@@ -44,7 +48,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={ROUTER_BASENAME}>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>
