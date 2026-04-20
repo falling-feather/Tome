@@ -1,0 +1,17 @@
+{
+  "name": "不存在之书 — Inkless",
+  "short_name": "Inkless",
+  "description": "AI 驱动的交互式叙事平台",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#181621",
+  "theme_color": "#181621",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
