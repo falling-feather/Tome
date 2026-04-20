@@ -262,6 +262,12 @@ async def submit_action(
             if extracted["money_gained"]:
                 new_state["money"] = new_state.get("money", 0) + extracted["money_gained"]
 
+            # 处理结构化状态变更（死亡叙事）
+            state_changes = extracted.get("state_changes") or {}
+            if state_changes.get("dead"):
+                new_state["status"] = "dead"
+                new_state["health"] = 0
+
             session.state = new_state
             await db.commit()
 

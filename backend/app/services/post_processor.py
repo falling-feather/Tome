@@ -73,6 +73,16 @@ class ResponsePostProcessor:
         re.MULTILINE,
     )
 
+    # 结构化 META / STATE 元行：LLM 可以在叙事末尾输出
+    #   [META] items_gained=金剑,银盾
+    #   [META] items_lost=面包
+    #   [META] money=+30
+    #   [STATE] dead=true
+    META_LINE_RE = re.compile(
+        r'^\s*\[(META|STATE)\]\s*(.+?)\s*$',
+        re.MULTILINE | re.IGNORECASE,
+    )
+
     def process(self, text: str, state: dict) -> dict:
         """
         处理 AI 响应文本, 返回后处理结果.
@@ -100,11 +110,34 @@ class ResponsePostProcessor:
                 cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
                 warnings.append(f"已移除元叙事内容: {pattern}")
 
+        # 1.5 提取 [META]/[STATE] 结构行（优先于贪婪正则）
+        meta_tags, cleaned = self._extract_meta_tags(cleaned)
+
         # 2. 修复格式问题
         cleaned = self._fix_formatting(cleaned)
 
         # 3. 提取结构化信息
         extracted = self._extract_info(cleaned, state)
+
+        # 3.5 用 META 覆盖正则产出：LLM 明确输出优先于叙事推断
+        if meta_tags.get("items_gained") is not None:
+            extracted["items_gained"] = meta_tags["items_gained"][:5]
+        if meta_tags.get("items_lost") is not None:
+            extracted["items_lost"] = meta_tags["items_lost"][:5]
+        if meta_tags.get("money_gained") is not None:
+            extracted["money_gained"] = meta_tags["money_gained"]
+        if meta_tags.get("money_spent") is not None:
+            extracted["money_spent"] = meta_tags["money_spent"]
+
+        # 3.6 状态变更（死亡叙事检测）
+        state_changes = {}
+        if meta_tags.get("dead") is True:
+            state_changes["dead"] = True
+        elif self._detect_death_narrative(cleaned, state):
+            state_changes["dead"] = True
+            warnings.append("检测到死亡叙事")
+        if state_changes:
+            extracted["state_changes"] = state_changes
 
         # 4. 一致性检查
         consistency_warnings = self._check_consistency(cleaned, state)
@@ -205,8 +238,71 @@ class ResponsePostProcessor:
             "money_gained": money_gained,
         }
 
+    # ------------------------------------------------------------------
+    # 结构化 META/STATE 标签解析（优先于贪婪正则）
+    # ------------------------------------------------------------------
+    DEATH_NARRATIVE_HINTS = [
+        "倒在血泊", "气绝身亡", "断了气", "被一刀劈死", "永远闭上了眼", "再也没能站起来",
+        "心脏停止", "灵魂离体", "被斩首",
+    ]
+
+    def _parse_item_list(self, raw: str) -> list[str]:
+        items = re.split(r'[，,、;；\s]+', raw.strip())
+        return [it.strip("「『【」』】 ") for it in items if it.strip()]
+
+    def _parse_money_value(self, raw: str) -> tuple[int, int]:
+        """返回 (gained, spent)"""
+        raw = raw.strip().replace(" ", "")
+        m = re.match(r'^([+-]?\d+)$', raw)
+        if not m:
+            return 0, 0
+        val = int(m.group(1))
+        if val >= 0:
+            return val, 0
+        return 0, abs(val)
+
+    def _extract_meta_tags(self, text: str) -> tuple[dict, str]:
+        """识别 [META]/[STATE] 元行并从原文中剥离。"""
+        tags: dict = {}
+        cleaned_lines: list[str] = []
+        for line in text.split('\n'):
+            m = self.META_LINE_RE.match(line)
+            if not m:
+                cleaned_lines.append(line)
+                continue
+            kind = m.group(1).upper()
+            payload = m.group(2)
+            if kind == "META":
+                kv = re.match(r'(\w+)\s*=\s*(.+)$', payload)
+                if not kv:
+                    continue
+                key = kv.group(1).lower()
+                value = kv.group(2).strip()
+                if key == "items_gained":
+                    tags["items_gained"] = self._parse_item_list(value)
+                elif key == "items_lost":
+                    tags["items_lost"] = self._parse_item_list(value)
+                elif key == "money":
+                    g, s = self._parse_money_value(value)
+                    if g:
+                        tags["money_gained"] = g
+                    if s:
+                        tags["money_spent"] = s
+            elif kind == "STATE":
+                kv = re.match(r'(\w+)\s*=\s*(\w+)$', payload)
+                if kv and kv.group(1).lower() == "dead" and kv.group(2).lower() in ("true", "1", "yes"):
+                    tags["dead"] = True
+        return tags, '\n'.join(cleaned_lines)
+
+    def _detect_death_narrative(self, text: str, state: dict) -> bool:
+        if state.get("status") == "dead":
+            return False
+        for hint in self.DEATH_NARRATIVE_HINTS:
+            if hint in text:
+                return True
+        return False
+
     def _check_consistency(self, text: str, state: dict) -> list[str]:
-        """一致性检查"""
         warnings = []
 
         char_name = state.get("character_name", "旅行者")

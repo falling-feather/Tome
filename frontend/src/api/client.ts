@@ -150,6 +150,21 @@ export const api = {
   updatePromptTemplate: (id: number, data: any) =>
     request<any>(`/admin/prompt-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Game Events (事件池)
+  getGameEvents: (params: { category?: string; scenario?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.category) qs.set('category', params.category);
+    if (params.scenario) qs.set('scenario', params.scenario);
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return request<{ events: any[] }>(`/admin/game-events${suffix}`);
+  },
+  createGameEvent: (data: any) =>
+    request<any>('/admin/game-events', { method: 'POST', body: JSON.stringify(data) }),
+  updateGameEvent: (id: number, data: any) =>
+    request<any>(`/admin/game-events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteGameEvent: (id: number) =>
+    request<any>(`/admin/game-events/${id}`, { method: 'DELETE' }),
+
   // Settings
   getApiKeys: () => request<{ keys: any[] }>('/settings/apikeys'),
   updateApiKey: (data: { provider: string; api_key: string; base_url: string; model: string }) =>

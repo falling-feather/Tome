@@ -11,6 +11,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { AdminLogs } from './pages/AdminLogs';
 import { AdminUsers } from './pages/AdminUsers';
 import { AdminWorldBook } from './pages/AdminWorldBook';
+import { AdminGameEvents } from './pages/AdminGameEvents';
 import { StoryPage } from './pages/StoryPage';
 
 function AppRoutes() {
@@ -33,6 +34,7 @@ function AppRoutes() {
         <Route path="logs" element={<AdminLogs />} />
         <Route path="users" element={<AdminUsers />} />
         <Route path="worldbook" element={<AdminWorldBook />} />
+        <Route path="events" element={<AdminGameEvents />} />
       </Route>
 
       <Route path="*" element={<Navigate to={token ? (isAdmin ? '/admin' : '/game') : '/login'} replace />} />

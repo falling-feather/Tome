@@ -126,3 +126,48 @@ class TestProcess:
         result = processor.process(text, fantasy_state)
         assert "作为一个AI" not in result["cleaned_text"]
         assert "森林" in result["cleaned_text"]
+
+
+# ---------------------------------------------------------------------------
+# 结构化 META / STATE 标签
+# ---------------------------------------------------------------------------
+class TestMetaTags:
+    NARRATIVE = (
+        "你走进了森林深处的洞穴，发现了一具古老的宝箱，里面装满了闪闪发光的宝物。\n"
+        "你小心翼翼地取出几样珍贵的物品收入背包。\n"
+    )
+
+    def test_meta_overrides_regex_for_items(self, processor, fantasy_state):
+        text = self.NARRATIVE + "[META] items_gained=金剑,银盾\n[META] items_lost=面包"
+        result = processor.process(text, fantasy_state)
+        ext = result["extracted"]
+        assert "金剑" in ext["items_gained"]
+        assert "银盾" in ext["items_gained"]
+        assert "面包" in ext["items_lost"]
+        assert "[META]" not in result["cleaned_text"]
+
+    def test_meta_money_signed(self, processor, fantasy_state):
+        text = self.NARRATIVE + "[META] money=+30"
+        result = processor.process(text, fantasy_state)
+        assert result["extracted"]["money_gained"] == 30
+        text2 = self.NARRATIVE + "[META] money=-15"
+        result2 = processor.process(text2, fantasy_state)
+        assert result2["extracted"]["money_spent"] == 15
+
+    def test_state_dead_tag(self, processor, fantasy_state):
+        text = self.NARRATIVE + "[STATE] dead=true"
+        result = processor.process(text, fantasy_state)
+        assert result["extracted"].get("state_changes", {}).get("dead") is True
+
+    def test_death_narrative_detection(self, processor, fantasy_state):
+        text = "巨龙的爪子将你撕裂，你倒在血泊之中，再也没能站起来。鲜血浸透了大地，森林归于寂静。"
+        result = processor.process(text, fantasy_state)
+        assert result["extracted"].get("state_changes", {}).get("dead") is True
+
+    def test_no_false_death_when_already_dead(self, processor):
+        state = {"scenario": "fantasy", "status": "dead"}
+        text = "你倒在血泊之中，再也没能站起来。" * 3
+        result = processor.process(text, state)
+        # 已经死亡时不再重复触发
+        assert "state_changes" not in result["extracted"] or \
+               not result["extracted"].get("state_changes", {}).get("dead")

@@ -24,6 +24,9 @@ export function AdminLayout() {
           <Link to="/admin/worldbook" className={`admin-nav-item ${isActive('/admin/worldbook')}`}>
             ▦ 世界书
           </Link>
+          <Link to="/admin/events" className={`admin-nav-item ${isActive('/admin/events')}`}>
+            ▧ 事件池
+          </Link>
         </nav>
         <main className="admin-content">
           <Outlet />
