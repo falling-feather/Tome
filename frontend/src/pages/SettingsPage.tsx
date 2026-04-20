@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import {
   isSoundEnabled, setSoundEnabled,
@@ -14,12 +15,12 @@ interface KeyConfig {
   model: string;
 }
 
-const PROVIDER_INFO: Record<string, { name: string; desc: string; primary: boolean }> = {
-  deepseek: { name: 'DeepSeek', desc: '优先使用，高质量中文对话模型', primary: true },
-  siliconflow: { name: '硅基流动', desc: '备用 API，支持多种模型', primary: false },
-};
-
 export function SettingsPage() {
+  const { t } = useTranslation();
+  const PROVIDER_INFO: Record<string, { name: string; desc: string; primary: boolean }> = {
+    deepseek: { name: 'DeepSeek', desc: t('settings.deepseekDesc'), primary: true },
+    siliconflow: { name: t('settings.siliconflowName'), desc: t('settings.siliconflowDesc'), primary: false },
+  };
   const [keys, setKeys] = useState<KeyConfig[]>([]);
   const [edits, setEdits] = useState<Record<string, KeyConfig>>({});
   const [status, setStatus] = useState<Record<string, { type: string; msg: string }>>({});
@@ -51,9 +52,9 @@ export function SettingsPage() {
     if (!data) return;
     try {
       await api.updateApiKey(data);
-      setStatus({ ...status, [provider]: { type: 'success', msg: '保存成功' } });
+      setStatus({ ...status, [provider]: { type: 'success', msg: t('settings.savedOk') } });
     } catch (err: any) {
-      setStatus({ ...status, [provider]: { type: 'error', msg: err.message || '保存失败' } });
+      setStatus({ ...status, [provider]: { type: 'error', msg: err.message || t('settings.saveFailed') } });
     }
     setTimeout(() => setStatus((s) => { const n = { ...s }; delete n[provider]; return n; }), 3000);
   };
@@ -65,20 +66,20 @@ export function SettingsPage() {
         ...prev,
         [provider]: { ...prev[provider], api_key: '' },
       }));
-      setStatus({ ...status, [provider]: { type: 'success', msg: '已恢复全局配置' } });
+      setStatus({ ...status, [provider]: { type: 'success', msg: t('settings.restoredOk') } });
     } catch (err: any) {
       setStatus({ ...status, [provider]: { type: 'error', msg: err.message } });
     }
     setTimeout(() => setStatus((s) => { const n = { ...s }; delete n[provider]; return n; }), 3000);
   };
 
-  if (loading) return <div className="settings-page flex items-center gap-sm"><div className="spinner" /> 加载中...</div>;
+  if (loading) return <div className="settings-page flex items-center gap-sm"><div className="spinner" /> {t('common.loading')}</div>;
 
   return (
     <div className="settings-page fade-in">
-      <h2>API 配置</h2>
+      <h2>{t('settings.apiTitle')}</h2>
       <p className="text-sm text-muted mb-md">
-        配置 LLM 提供商的 API Key。留空时将使用系统全局配置。
+        {t('settings.apiDesc')}
       </p>
 
       {Object.entries(PROVIDER_INFO).map(([provider, info]) => {
@@ -90,7 +91,7 @@ export function SettingsPage() {
             <h3>
               {info.name}
               <span className={`provider-tag ${info.primary ? '' : 'secondary'}`}>
-                {info.primary ? '优先' : '备用'}
+                {info.primary ? t('settings.primary') : t('settings.backup')}
               </span>
             </h3>
             <p>{info.desc}</p>
@@ -115,7 +116,7 @@ export function SettingsPage() {
                 />
               </div>
               <div className="settings-field">
-                <label>模型名称</label>
+                <label>{t('settings.modelName')}</label>
                 <input
                   type="text"
                   value={edit.model}
@@ -126,8 +127,8 @@ export function SettingsPage() {
             </div>
 
             <div className="settings-actions">
-              <button className="btn btn-primary btn-sm" onClick={() => handleSave(provider)}>保存</button>
-              <button className="btn btn-sm btn-danger" onClick={() => handleDelete(provider)}>恢复全局</button>
+              <button className="btn btn-primary btn-sm" onClick={() => handleSave(provider)}>{t('settings.save')}</button>
+              <button className="btn btn-sm btn-danger" onClick={() => handleDelete(provider)}>{t('settings.restoreGlobal')}</button>
             </div>
 
             {st && <div className={`settings-status ${st.type}`}>{st.msg}</div>}
@@ -135,20 +136,20 @@ export function SettingsPage() {
         );
       })}
 
-      <h2 style={{ marginTop: 32 }}>声音与通知</h2>
-      <p className="text-sm text-muted mb-md">控制游戏中的音效和浏览器通知。</p>
+      <h2 style={{ marginTop: 32 }}>{t('settings.soundTitle')}</h2>
+      <p className="text-sm text-muted mb-md">{t('settings.soundDesc')}</p>
 
       <div className="settings-card">
         <div className="settings-toggle-row">
           <div>
-            <strong>消息提示音</strong>
-            <p className="text-sm text-muted">AI 回复完成时播放提示音</p>
+            <strong>{t('settings.soundLabel')}</strong>
+            <p className="text-sm text-muted">{t('settings.soundHint')}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               className="btn btn-sm"
               onClick={() => playMessageSound()}
-              title="试听"
+              title={t('settings.soundPreview')}
             >
               🔊
             </button>
@@ -165,8 +166,8 @@ export function SettingsPage() {
 
         <div className="settings-toggle-row" style={{ marginTop: 16 }}>
           <div>
-            <strong>浏览器通知</strong>
-            <p className="text-sm text-muted">页面不在前台时发送桌面通知</p>
+            <strong>{t('settings.notifyLabel')}</strong>
+            <p className="text-sm text-muted">{t('settings.notifyHint')}</p>
           </div>
           <label className="toggle-switch">
             <input
